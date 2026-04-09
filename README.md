@@ -4,7 +4,7 @@
 
 [![ClawHub](https://img.shields.io/badge/ClawHub-memory--engine--3layer-blue)](https://clawhub.com)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.3.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
+[![Version](https://img.shields.io/badge/version-2.4.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
 
 ## The Problem
 
@@ -261,3 +261,9 @@ MIT
 - **FIX**: `memory-compact.js` uses timezone-aware date comparison (`getToday()`)
 - **IMPROVE**: LIKE fallback uses case-insensitive matching for both CJK and English
 - **IMPROVE**: All search paths now use TF-density scoring for consistent ranking
+
+### v2.4.0 (2026-04-09)
+- **FIX (critical)**: Search score merging — FTS5 and LIKE scores now take max instead of skipping, fixing cases where FTS5 found a chunk but scored it lower than LIKE would have
+- **FIX**: Orphan cleanup — `memory-index.js` now removes entries for deleted files (previously accumulated stale records pointing to non-existent files)
+- **IMPROVE**: Temporal decay half-life: 30d → 90d (old memories no longer vanish from search results)
+- **IMPROVE**: Search precision — "Entry 499" now correctly ranks the chunk containing "499" first (was ranking random chunks higher due to score mismatch)

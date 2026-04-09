@@ -76,9 +76,23 @@ function main() {
 
   const insertFile = db.prepare('INSERT OR REPLACE INTO files (path, hash, date, is_core) VALUES (?, ?, ?, ?)');
   const deleteChunks = db.prepare('DELETE FROM chunks WHERE file_id = ?');
+  const deleteFile = db.prepare('DELETE FROM files WHERE id = ?');
   const getFile = db.prepare('SELECT id, hash FROM files WHERE path = ?');
   const insertChunk = db.prepare('INSERT INTO chunks (file_id, text, heading, line_start, line_end) VALUES (?, ?, ?, ?, ?)');
-  let indexed = 0, skipped = 0;
+  let indexed = 0, skipped = 0, cleaned = 0;
+
+  // Clean up orphaned entries (files deleted from disk but still in index)
+  const diskPaths = new Set(files.map(f => f.path));
+  const dbFiles = db.prepare('SELECT id, path FROM files').all();
+  db.transaction(() => {
+    for (const dbFile of dbFiles) {
+      if (!diskPaths.has(dbFile.path)) {
+        deleteChunks.run(dbFile.id);
+        deleteFile.run(dbFile.id);
+        cleaned++;
+      }
+    }
+  })();
 
   db.transaction(() => {
     for (const file of files) {
@@ -96,7 +110,7 @@ function main() {
 
   const totalChunks = db.prepare('SELECT COUNT(*) as cnt FROM chunks').get().cnt;
   const totalFiles = db.prepare('SELECT COUNT(*) as cnt FROM files').get().cnt;
-  console.log(JSON.stringify({ status: 'ok', indexed, skipped, totalFiles, totalChunks, dbPath: DB_PATH }));
+  console.log(JSON.stringify({ status: 'ok', indexed, skipped, cleaned, totalFiles, totalChunks, dbPath: DB_PATH }));
   db.close();
 }
 main();

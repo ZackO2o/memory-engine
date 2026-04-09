@@ -13,7 +13,7 @@ const GLOBAL_MODULES = require('child_process').execSync('npm root -g', { encodi
 const Database = require(path.join(GLOBAL_MODULES, 'better-sqlite3'));
 
 const DEFAULT_WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.join(process.env.HOME, '.openclaw/workspace');
-const HALF_LIFE_DAYS = 30;
+const HALF_LIFE_DAYS = 90; // 90-day half-life: balanced recency vs long-term recall
 
 const args = process.argv.slice(2);
 let query = '', maxResults = 3, maxChars = 200, jsonOutput = false, workspace = DEFAULT_WORKSPACE;
@@ -131,11 +131,12 @@ function main() {
     } catch (e) { /* FTS5 error — LIKE fallback below will catch it */ }
   }
 
-  // Step 2: LIKE fallback on all candidates (catches CJK, substrings, date-filtered, FTS5 misses)
-  // Use case-insensitive matching for both CJK bigrams and English substrings
+  // Step 2: LIKE scan on all candidates — merges with FTS5 results (takes max score)
   const likeCandidates = allowedFileIds ? candidates : (candidates || db.prepare('SELECT c.id, c.file_id, c.text, c.heading, c.line_start, c.line_end, f.path, f.date, f.is_core FROM chunks c JOIN files f ON f.id = c.file_id').all());
+  const resultMap = new Map(); // id → result (for dedup + max-score merge)
+  for (const r of results) resultMap.set(r.id, r);
+
   for (const chunk of likeCandidates) {
-    if (seen.has(chunk.id)) continue; // already found by FTS5
     const combined = (chunk.text + ' ' + (chunk.heading || '')).toLowerCase();
     let totalOccurrences = 0, keywordsHit = 0;
     for (const kw of keywords) {
@@ -147,9 +148,18 @@ function main() {
     if (keywordsHit > 0) {
       const density = (totalOccurrences / Math.max(combined.length, 1)) * 100;
       const coverage = keywordsHit / keywords.length;
-      results.push({ ...chunk, hits: density * (0.5 + 0.5 * coverage) });
+      const likeScore = density * (0.5 + 0.5 * coverage);
+      const existing = resultMap.get(chunk.id);
+      if (existing) {
+        // Take max of FTS5 score and LIKE score
+        if (likeScore > existing.hits) existing.hits = likeScore;
+      } else {
+        const entry = { ...chunk, hits: likeScore };
+        resultMap.set(chunk.id, entry);
+      }
     }
   }
+  results = Array.from(resultMap.values());
 
   const scored = results.map(r => ({ ...r, finalScore: r.hits * (r.is_core ? 1.5 : 1.0) * temporalDecay(r.date) }));
   scored.sort((a, b) => b.finalScore - a.finalScore);
