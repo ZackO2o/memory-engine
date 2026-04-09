@@ -64,8 +64,37 @@ function temporalDecay(dateStr) {
   const days = (Date.now() - new Date(dateStr + 'T00:00:00').getTime()) / 86400000;
   return days < 0 ? 1.0 : Math.exp(-(Math.LN2 / HALF_LIFE_DAYS) * days);
 }
-function truncate(text, max) {
+function truncate(text, max, kws) {
   if (text.length <= max) return text;
+  // If keywords provided, extract context around first match
+  if (kws && kws.length > 0) {
+    const lower = text.toLowerCase();
+    let bestPos = -1;
+    for (const kw of kws) {
+      const pos = lower.indexOf(kw.toLowerCase());
+      if (pos >= 0) { bestPos = pos; break; }
+    }
+    if (bestPos >= 0) {
+      const half = Math.floor(max / 2);
+      let start = Math.max(0, bestPos - half);
+      let end = Math.min(text.length, start + max);
+      if (end - start < max) start = Math.max(0, end - max);
+      let snippet = text.slice(start, end);
+      // Trim to line boundaries
+      if (start > 0) {
+        const nl = snippet.indexOf('\n');
+        if (nl >= 0 && nl < max * 0.3) snippet = snippet.slice(nl + 1);
+        snippet = '…' + snippet;
+      }
+      if (end < text.length) {
+        const nl = snippet.lastIndexOf('\n');
+        if (nl > max * 0.7) snippet = snippet.slice(0, nl);
+        snippet = snippet + '…';
+      }
+      return snippet;
+    }
+  }
+  // Fallback: head truncation
   const cut = text.slice(0, max), nl = cut.lastIndexOf('\n');
   return (nl > max * 0.5 ? cut.slice(0, nl) : cut) + '…';
 }
@@ -204,11 +233,11 @@ function main() {
   const dateInfo = dateFilter ? ` [date=${dateFilter}]` : afterDate ? ` [after=${afterDate}]` : beforeDate ? ` [before=${beforeDate}]` : '';
 
   if (jsonOutput) {
-    console.log(JSON.stringify({ status: 'ok', query, dateFilter: dateFilter || afterDate || beforeDate || null, results: top.map(r => ({ text: truncate(r.text, maxChars), source: `${r.path}#L${r.line_start}-L${r.line_end}`, heading: r.heading || null, date: r.date, score: Math.round(r.finalScore * 1000) / 1000 })) }));
+    console.log(JSON.stringify({ status: 'ok', query, dateFilter: dateFilter || afterDate || beforeDate || null, results: top.map(r => ({ text: truncate(r.text, maxChars, keywords), source: `${r.path}#L${r.line_start}-L${r.line_end}`, heading: r.heading || null, date: r.date, score: Math.round(r.finalScore * 1000) / 1000 })) }));
   } else if (!top.length) {
     console.log(`[memory] No results for: ${query}${dateInfo}`);
   } else {
-    console.log(top.map((r, i) => `[${i + 1}] ${r.path}#L${r.line_start}${r.heading ? ` (${r.heading})` : ''}\n${truncate(r.text, maxChars)}`).join('\n---\n'));
+    console.log(top.map((r, i) => `[${i + 1}] ${r.path}#L${r.line_start}${r.heading ? ` (${r.heading})` : ''}\n${truncate(r.text, maxChars, keywords)}`).join('\n---\n'));
   }
   db.close();
 }

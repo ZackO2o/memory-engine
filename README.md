@@ -4,7 +4,7 @@
 
 [![ClawHub](https://img.shields.io/badge/ClawHub-memory--engine--3layer-blue)](https://clawhub.com)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.8.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
+[![Version](https://img.shields.io/badge/version-2.9.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
 
 ## The Problem
 
@@ -293,3 +293,9 @@ MIT
 - **NEW**: `memory-restore.sh` — One-command disaster recovery after reinstall (restores memories, config, skills, crontab, rebuilds search index)
 - **NEW**: Cron Step 6 automatically triggers backup after memory maintenance
 - **IMPROVE**: SKILL.md documents full backup & disaster recovery workflow
+
+### v2.9.0 (2026-04-09)
+- **OPTIMIZE**: `boot.js` smart MEMORY.md truncation — keeps section headers + most recent entries per section. Default 1500 chars (~500 tokens). Prevents unbounded token growth (saves 94% at 18KB MEMORY.md).
+- **OPTIMIZE**: Search results use keyword-context extraction — truncates around the matching keyword instead of from the start, showing more relevant snippets
+- **NEW**: `boot.js --max-chars N` to control token budget; `--full` for no truncation
+- **NEW**: `search.js --max-chars N` for per-result truncation control

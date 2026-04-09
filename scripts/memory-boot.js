@@ -1,22 +1,27 @@
 #!/usr/bin/env node
 /**
  * memory-boot.js — Single-command session startup (replaces 3 separate calls)
- * Usage: node memory-boot.js [--workspace /path]
+ * Usage: node memory-boot.js [--workspace /path] [--max-chars N]
  * 
  * Does in one call:
  * 1. Health check
  * 2. Incremental index update (+ orphan cleanup)
- * 3. Output MEMORY.md summary (first 2000 chars)
+ * 3. Output MEMORY.md (smart truncation when large)
  * 
- * Saves 2 tool calls per session startup.
+ * --max-chars N: Max chars for MEMORY.md output (default 1500, ~500 tokens)
+ *   When MEMORY.md exceeds limit: outputs section headers + most recent entries
+ *   This prevents token waste as memory grows over months
  */
 const fs = require('fs'), path = require('path');
 
 const DEFAULT_WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.join(process.env.HOME, '.openclaw/workspace');
 const args = process.argv.slice(2);
 let workspace = DEFAULT_WORKSPACE;
+let maxChars = 1500;  // ~500 tokens — safe default
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--workspace' && args[i + 1]) workspace = args[++i];
+  if (args[i] === '--max-chars' && args[i + 1]) maxChars = parseInt(args[++i]) || 1500;
+  if (args[i] === '--full') maxChars = Infinity;  // no truncation
 }
 
 const MEMORY_DIR = path.join(workspace, 'memory');
@@ -68,20 +73,57 @@ function updateIndex() {
   }
 }
 
-// 3. MEMORY.md content (truncated)
-function readCore(maxChars = 2000) {
+// 3. MEMORY.md content (smart truncation for token efficiency)
+function readCore(limit) {
   if (!fs.existsSync(MEMORY_MD)) return null;
   const content = fs.readFileSync(MEMORY_MD, 'utf8');
-  if (content.length <= maxChars) return content;
-  const cut = content.slice(0, maxChars);
-  const nl = cut.lastIndexOf('\n');
-  return (nl > maxChars * 0.5 ? cut.slice(0, nl) : cut) + '\n…(truncated)';
+  if (content.length <= limit) return content;
+
+  // Smart truncation: keep section headers + most recent entries per section
+  const lines = content.split('\n');
+  const sections = [];
+  let current = { header: '', lines: [], recentLines: [] };
+
+  for (const line of lines) {
+    if (line.match(/^##\s/)) {
+      if (current.header || current.lines.length) sections.push(current);
+      current = { header: line, lines: [], recentLines: [] };
+    } else if (line.match(/^#\s/)) {
+      // Keep top-level heading always
+      if (current.header || current.lines.length) sections.push(current);
+      current = { header: line, lines: [], recentLines: [] };
+    } else {
+      current.lines.push(line);
+    }
+  }
+  if (current.header || current.lines.length) sections.push(current);
+
+  // Build output: headers + last N entries per section to fit budget
+  let result = '';
+  const headerBudget = sections.reduce((s, sec) => s + sec.header.length + 1, 0);
+  const contentBudget = limit - headerBudget - 50; // 50 chars for truncation notice
+  const perSection = Math.max(100, Math.floor(contentBudget / Math.max(1, sections.length)));
+
+  for (const sec of sections) {
+    result += sec.header + '\n';
+    const content = sec.lines.join('\n').trim();
+    if (content.length <= perSection) {
+      result += content + '\n\n';
+    } else {
+      // Take last N chars (most recent entries)
+      const tail = content.slice(-perSection);
+      const firstNl = tail.indexOf('\n');
+      result += '…\n' + (firstNl >= 0 ? tail.slice(firstNl + 1) : tail) + '\n\n';
+    }
+  }
+
+  return result.trimEnd() + `\n\n_(truncated: ${content.length} chars → ${result.length} chars)_`;
 }
 
 // Run all
 const health = healthCheck();
 const index = updateIndex();
-const core = readCore();
+const core = readCore(maxChars);
 
 // Compact output
 const warnings = [];
