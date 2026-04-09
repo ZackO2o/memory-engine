@@ -136,6 +136,12 @@ Health output:
 node scripts/memory-search.js "deployment plan"          # top 3, 200 chars
 node scripts/memory-search.js "API重构" --json --max 5   # CJK support
 node scripts/memory-search.js "query" --max 1 --max-chars 100  # ultra-minimal
+
+# Date filtering (auto-detects "4月2日" / "April 2" in queries)
+node scripts/memory-search.js "4月2日完成了什么"          # auto date filter
+node scripts/memory-search.js "tasks" --date 2026-04-02  # exact date
+node scripts/memory-search.js "progress" --recent 7      # last 7 days
+node scripts/memory-search.js "bugs" --after 2026-04-01 --before 2026-04-08
 ```
 
 ### Index
@@ -151,12 +157,22 @@ node scripts/memory-maintain.js --reindex    # force rebuild
 node scripts/memory-maintain.js --prune-days 90  # trim old entries
 ```
 
+### Compact (compress old logs)
+```bash
+node scripts/memory-compact.js --stats                  # show candidates
+node scripts/memory-compact.js --older-than 30 --dry-run  # preview
+node scripts/memory-compact.js --older-than 30          # execute (originals → memory/archive/)
+```
+
+Compaction extracts headings + key bullets (✅/🔴/重要), saves originals to `memory/archive/`. Typical savings: 60-70%.
+
 ## How Search Works
 
-1. **Chunking**: ~600 chars per chunk, 100 char overlap, split at headings
+1. **Chunking**: ~300 chars per chunk, 60 char overlap, split at headings
 2. **Indexing**: SQLite FTS5 full-text index + file metadata
-3. **Search**: BM25 for English; LIKE bigram for Chinese/CJK
-4. **Ranking**: hit_count × core_boost(1.5× for MEMORY.md) × temporal_decay(30-day half-life)
+3. **Search**: BM25 + phrase matching for English; TF-density bigram for CJK
+4. **Date filtering**: Auto-detects dates in queries (4月2日, April 2, 2026-04-02)
+5. **Ranking**: TF_density × coverage × core_boost(1.5×) × temporal_decay(30-day half-life)
 5. **Output**: truncated snippets with `file#line` citations
 
 ## Token Budget
