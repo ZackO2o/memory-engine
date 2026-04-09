@@ -65,9 +65,12 @@ function healthCheck() {
   const files = fs.readdirSync(MEMORY_DIR).filter(f => f.match(/^\d{4}-\d{2}-\d{2}\.md$/)).sort();
   const hasCore = fs.existsSync(MEMORY_MD), hasTodayLog = files.includes(`${today}.md`);
   const gaps = [];
+  // Only count gaps since the earliest daily log (don't penalize days before system existed)
+  const earliest = files.length > 0 ? files[0].replace('.md', '') : today;
   for (let i = 1; i < 14; i++) {
     const d = new Date(todayDate); d.setDate(d.getDate() - i);
     const ds = d.toISOString().slice(0, 10);
+    if (ds < earliest) break; // don't count before system existed
     if (!files.includes(`${ds}.md`)) gaps.push(ds);
   }
   const totalChars = files.reduce((s, f) => s + fs.statSync(path.join(MEMORY_DIR, f)).size, 0);
@@ -80,6 +83,14 @@ function healthCheck() {
   console.log(JSON.stringify({ status: 'ok', today, hasTodayLog, hasCoreMemory: hasCore, dailyFiles: files.length, totalDailyChars: totalChars, coreMemoryChars: coreChars, gapCount: gaps.length, healthScore: score, warnings }, null, 2));
 }
 
+function autoReindex() {
+  const indexScript = path.join(__dirname, 'memory-index.js');
+  if (fs.existsSync(indexScript)) {
+    try { require('child_process').execSync(`node "${indexScript}" --workspace "${workspace}"`, { stdio: 'pipe' }); }
+    catch (e) { /* index failure is non-fatal */ }
+  }
+}
+
 if (showStatus) { healthCheck(); }
 else if (!todayText && !coreText) { console.error('Usage:\n  --today "text" [--tag t]  Append daily log\n  --core "text" [--section s]  Append MEMORY.md\n  --status  Health check'); process.exit(1); }
-else { if (todayText) writeToday(todayText, tag); if (coreText) writeCore(coreText, section); }
+else { if (todayText) writeToday(todayText, tag); if (coreText) writeCore(coreText, section); autoReindex(); }
