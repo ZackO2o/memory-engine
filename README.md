@@ -62,6 +62,15 @@ All three failing simultaneously ≈ 0%.
 | Read 4 daily files | ~8,000 |
 | **Savings** | **~95%** |
 
+## Features
+
+- **Write-then-search**: Every write auto-triggers incremental reindex — no 6-hour wait, search works instantly
+- **Smart health scoring**: Gap count only starts from when the system was first installed, not from the beginning of time
+- **Three-layer protection**: System cron + OpenClaw memory-flush + agent behavior rules
+- **CJK support**: BM25 for English, LIKE bigram fallback for Chinese/Japanese/Korean
+- **Temporal decay**: 30-day half-life — recent memories rank higher, MEMORY.md never decays (1.5× boost)
+- **Zero external deps**: No embedding API, no cloud, no Docker — just SQLite
+
 ## Quick Start
 
 ### Install via ClawHub
