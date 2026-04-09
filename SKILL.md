@@ -110,6 +110,13 @@ npm install -g better-sqlite3
 
 ## Commands
 
+### Boot (session startup)
+```bash
+node scripts/memory-boot.js                     # health + index + MEMORY.md output
+```
+Replaces 3 separate calls (`--status` + `memory-index.js` + `read MEMORY.md`) with one command.
+Auto-recovers from corrupted database.
+
 ### Write (most important!)
 ```bash
 # Daily log (auto-creates memory/YYYY-MM-DD.md)

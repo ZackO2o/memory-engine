@@ -47,18 +47,27 @@ function healthCheck() {
   return { today, hasTodayLog, hasCore, dailyFiles: files.length, gaps, score };
 }
 
-// 2. Index update
+// 2. Index update (auto-recovers from corrupted DB)
 function updateIndex() {
   const indexScript = path.join(__dirname, 'memory-index.js');
   if (!fs.existsSync(indexScript)) return { indexed: 0, error: 'index script not found' };
   try {
     const result = require('child_process').execSync(
       `node "${indexScript}" --workspace "${workspace}"`,
-      { encoding: 'utf8', stdio: 'pipe' }
+      { encoding: 'utf8', stdio: 'pipe', timeout: 30000 }
     );
     return JSON.parse(result.trim());
   } catch (e) {
-    return { indexed: 0, error: e.message };
+    // If index script crashed (e.g., corrupted DB), try force rebuild
+    try {
+      const result = require('child_process').execSync(
+        `node "${indexScript}" --workspace "${workspace}" --force`,
+        { encoding: 'utf8', stdio: 'pipe', timeout: 30000 }
+      );
+      return JSON.parse(result.trim());
+    } catch (e2) {
+      return { indexed: 0, error: 'index failed: ' + (e2.message || '').slice(0, 100) };
+    }
   }
 }
 

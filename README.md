@@ -4,7 +4,7 @@
 
 [![ClawHub](https://img.shields.io/badge/ClawHub-memory--engine--3layer-blue)](https://clawhub.com)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.5.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
+[![Version](https://img.shields.io/badge/version-2.6.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
 
 ## The Problem
 
@@ -274,3 +274,10 @@ MIT
 - **NEW**: `postIndexSync: "async"` config — OpenClaw auto-syncs memory index after compaction
 - **IMPROVE**: Cron now detects stale index (files changed but not reindexed) and auto-rebuilds — catches memory-flush writes that didn't trigger reindex
 - **IMPROVE**: SKILL.md now includes warning about memory-flush write restrictions
+
+### v2.6.0 (2026-04-09)
+- **FIX**: Corrupted database auto-recovery — search/index/boot now detect `SQLITE_NOTADB`/`SQLITE_CORRUPT` and auto-rebuild instead of crashing
+- **FIX**: Date-only queries (e.g., "4月2日") now return all chunks from that date instead of empty results. Date tokens are stripped from search keywords to avoid literal matching.
+- **FIX**: Date-only queries exclude undated files (MEMORY.md) to focus on the requested day's content
+- **IMPROVE**: `memory-boot.js` retries with `--force` if initial index update fails
+- **IMPROVE**: SKILL.md now documents `memory-boot.js` in Commands section

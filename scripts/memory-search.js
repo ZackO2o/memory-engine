@@ -34,6 +34,25 @@ if (!query) { console.error('Usage: memory-search.js "query" [--max N] [--date Y
 const DB_PATH = path.join(workspace, '.memory', 'index.sqlite');
 if (!fs.existsSync(DB_PATH)) { console.error(JSON.stringify({ status: 'error', message: 'No index. Run memory-index.js first.' })); process.exit(1); }
 
+// Validate database integrity, auto-rebuild if corrupted
+try {
+  const testDb = new Database(DB_PATH, { readonly: true });
+  testDb.pragma('integrity_check');
+  testDb.close();
+} catch (e) {
+  if (e.code === 'SQLITE_NOTADB' || e.code === 'SQLITE_CORRUPT') {
+    console.error(`[memory] Index corrupted (${e.code}), rebuilding...`);
+    try { fs.unlinkSync(DB_PATH); } catch (_) {}
+    try {
+      require('child_process').execSync(`node "${path.join(__dirname, 'memory-index.js')}" --workspace "${workspace}" --force`, { stdio: 'pipe' });
+      console.error('[memory] Index rebuilt successfully.');
+    } catch (rebuildErr) {
+      console.error(JSON.stringify({ status: 'error', message: 'Index corrupted and rebuild failed.' }));
+      process.exit(1);
+    }
+  } else throw e;
+}
+
 // Compute date bounds
 if (recentDays > 0) {
   const d = new Date(); d.setDate(d.getDate() - recentDays);
@@ -86,13 +105,23 @@ function matchesDateFilter(fileDate) {
 
 function main() {
   const db = new Database(DB_PATH, { readonly: true });
-  const keywords = extractKeywords(query);
 
   // Auto-detect date in query if no explicit --date flag
+  let queryForSearch = query;
   if (!dateFilter && !afterDate && !beforeDate && !recentDays) {
     const detected = extractQueryDate(query);
-    if (detected) dateFilter = detected;
+    if (detected) {
+      dateFilter = detected;
+      // Remove date tokens from search query to avoid matching date strings literally
+      queryForSearch = query
+        .replace(/\d{4}-\d{1,2}-\d{1,2}/g, '')      // 2026-04-02
+        .replace(/\d{1,2}月\d{1,2}[日号]/g, '')       // 4月2日
+        .replace(/\s+/g, ' ').trim();
+    }
   }
+
+  const isDateOnlyQuery = queryForSearch === '' && (dateFilter || afterDate || beforeDate);
+  const keywords = isDateOnlyQuery ? [] : extractKeywords(queryForSearch || query);
 
   let results = [];
   const hasDateConstraint = dateFilter || afterDate || beforeDate;
@@ -102,6 +131,13 @@ function main() {
   if (hasDateConstraint) {
     const files = db.prepare('SELECT id, date FROM files').all();
     allowedFileIds = new Set(files.filter(f => matchesDateFilter(f.date)).map(f => f.id));
+  }
+
+  // If query was just a date (e.g., "4月2日"), return all chunks from that date (exclude undated files like MEMORY.md)
+  if (isDateOnlyQuery && allowedFileIds) {
+    const datedFileIds = new Set(db.prepare('SELECT id FROM files WHERE date IS NOT NULL').all().map(f => f.id));
+    const all = db.prepare('SELECT c.id, c.file_id, c.text, c.heading, c.line_start, c.line_end, f.path, f.date, f.is_core FROM chunks c JOIN files f ON f.id = c.file_id').all();
+    results = all.filter(c => allowedFileIds.has(c.file_id) && datedFileIds.has(c.file_id)).map(c => ({ ...c, hits: 1.0 }));
   }
 
   // Get candidate chunks

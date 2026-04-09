@@ -57,6 +57,23 @@ function extractDate(filePath) { const m = path.basename(filePath).match(/(\d{4}
 
 function main() {
   ensureDir(path.dirname(DB_PATH));
+
+  // Auto-recover from corrupted database
+  if (fs.existsSync(DB_PATH)) {
+    try {
+      const testDb = new Database(DB_PATH, { readonly: true });
+      testDb.pragma('integrity_check');
+      testDb.close();
+    } catch (e) {
+      if (e.code === 'SQLITE_NOTADB' || e.code === 'SQLITE_CORRUPT') {
+        console.error(`[index] Database corrupted (${e.code}), deleting and rebuilding...`);
+        try { fs.unlinkSync(DB_PATH); } catch (_) {}
+        try { fs.unlinkSync(DB_PATH + '-wal'); } catch (_) {}
+        try { fs.unlinkSync(DB_PATH + '-shm'); } catch (_) {}
+      } else throw e;
+    }
+  }
+
   const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
   db.exec(`
