@@ -12,8 +12,8 @@ const GLOBAL_MODULES = require('child_process').execSync('npm root -g', { encodi
 const Database = require(path.join(GLOBAL_MODULES, 'better-sqlite3'));
 
 const DEFAULT_WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.join(process.env.HOME, '.openclaw/workspace');
-const CHUNK_MAX_CHARS = 600;
-const CHUNK_OVERLAP_CHARS = 100;
+const CHUNK_MAX_CHARS = 300;  // v2.0.2: smaller chunks for better CJK precision
+const CHUNK_OVERLAP_CHARS = 60;
 
 const args = process.argv.slice(2);
 let workspace = DEFAULT_WORKSPACE, force = false;

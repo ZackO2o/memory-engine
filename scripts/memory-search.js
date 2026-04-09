@@ -53,12 +53,22 @@ function main() {
   let results = [];
 
   if (hasCJK(query)) {
+    // v2.0.2: TF-density scoring — count ALL occurrences, not just binary hit
     const all = db.prepare('SELECT c.id, c.text, c.heading, c.line_start, c.line_end, f.path, f.date, f.is_core FROM chunks c JOIN files f ON f.id = c.file_id').all();
     for (const chunk of all) {
-      const combined = (chunk.text + ' ' + (chunk.heading || '')).toLowerCase();
-      let hits = 0;
-      for (const kw of keywords) if (combined.includes(kw)) hits++;
-      if (hits > 0) results.push({ ...chunk, hits });
+      const combined = (chunk.text + ' ' + (chunk.heading || ''));
+      let totalOccurrences = 0, keywordsHit = 0;
+      for (const kw of keywords) {
+        let count = 0, idx = -1;
+        while ((idx = combined.indexOf(kw, idx + 1)) !== -1) count++;
+        if (count > 0) { keywordsHit++; totalOccurrences += count; }
+      }
+      if (keywordsHit > 0) {
+        // density = occurrences per 100 chars, boosted by keyword coverage
+        const density = (totalOccurrences / Math.max(combined.length, 1)) * 100;
+        const coverage = keywordsHit / keywords.length; // 0-1
+        results.push({ ...chunk, hits: density * (0.5 + 0.5 * coverage) });
+      }
     }
   } else {
     try {
