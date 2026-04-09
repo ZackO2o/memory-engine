@@ -1,0 +1,6 @@
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.memory/
+node_modules/
+*.skill
