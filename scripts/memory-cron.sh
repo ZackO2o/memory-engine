@@ -67,3 +67,10 @@ if echo "$SYNC_CHECK" | grep -q "stale"; then
 fi
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] cron completed" >> "$LOG"
+
+# Step 6: Auto-backup to GitHub (if git remote configured)
+BACKUP_SCRIPT="$DIR/memory-backup.sh"
+if [ -f "$BACKUP_SCRIPT" ] && [ -d "$WORKSPACE/.git" ]; then
+  log "starting backup"
+  bash "$BACKUP_SCRIPT" >> "$LOG" 2>&1 || log "backup failed"
+fi

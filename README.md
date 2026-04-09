@@ -4,7 +4,7 @@
 
 [![ClawHub](https://img.shields.io/badge/ClawHub-memory--engine--3layer-blue)](https://clawhub.com)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.7.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
+[![Version](https://img.shields.io/badge/version-2.8.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
 
 ## The Problem
 
@@ -287,3 +287,9 @@ MIT
 - **NEW**: `_timezone.js` shared module — single source of truth for timezone resolution
 - **NEW**: Resolution order: `OPENCLAW_TZ` > `openclaw.json userTimezone` > `TZ` > `/etc/timezone` > `/etc/localtime` > `UTC`
 - **IMPROVE**: `memory-cron.sh` reads timezone from `openclaw.json` instead of relying on system TZ
+
+### v2.8.0 (2026-04-09)
+- **NEW**: `memory-backup.sh` — Auto-backup workspace to GitHub private repo (runs every 6h via cron, only pushes if changes exist)
+- **NEW**: `memory-restore.sh` — One-command disaster recovery after reinstall (restores memories, config, skills, crontab, rebuilds search index)
+- **NEW**: Cron Step 6 automatically triggers backup after memory maintenance
+- **IMPROVE**: SKILL.md documents full backup & disaster recovery workflow

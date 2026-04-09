@@ -196,6 +196,38 @@ Compaction extracts headings + key bullets (✅/🔴/重要), saves originals to
 | Read 4 daily files | ~8000 |
 | **Savings** | **~95%** |
 
+## Backup & Disaster Recovery
+
+### Auto-backup (recommended)
+Memory-cron automatically pushes to GitHub every 6 hours (if git remote is configured):
+```bash
+# One-time setup:
+cd ~/.openclaw/workspace
+git init && git branch -M main
+git remote add origin https://<token>@github.com/<user>/openclaw-workspace.git
+bash skills/memory-engine/scripts/memory-backup.sh   # first push
+# After this, cron handles it automatically every 6h
+```
+
+### Restore after reinstall
+```bash
+# After fresh OpenClaw install:
+bash memory-restore.sh https://<token>@github.com/<user>/openclaw-workspace.git
+# Restores: memories, config, skills, crontab, rebuilds search index
+```
+
+### What's backed up
+- `MEMORY.md` + `memory/*.md` (all memories — irreplaceable)
+- `SOUL.md`, `USER.md`, `IDENTITY.md` (personality)
+- `AGENTS.md`, `TOOLS.md`, `HEARTBEAT.md` (behavior rules)
+- `skills/` (all installed skills)
+- `openclaw.json` → backup copy
+- `crontab` → backup copy
+
+### What's NOT backed up (rebuilt automatically)
+- `.memory/index.sqlite` (rebuilt from md files by restore script)
+- `.memory/cron.log` (transient)
+
 ## Requirements
 
 - Node.js 18+
