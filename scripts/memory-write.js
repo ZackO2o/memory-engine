@@ -26,37 +26,64 @@ function ensureDir(dir) { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive
 function getToday() { return new Date().toISOString().slice(0, 10); }
 function getTime() { return new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }); }
 
+// File lock using .lock file with retry
+function withLock(filePath, fn) {
+  const lockPath = filePath + '.lock';
+  const maxRetries = 10, retryMs = 50;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      fs.writeFileSync(lockPath, String(process.pid), { flag: 'wx' });
+      try { return fn(); } finally { try { fs.unlinkSync(lockPath); } catch(e) {} }
+    } catch (e) {
+      if (e.code === 'EEXIST') {
+        // Check if lock is stale (>5s old)
+        try { const s = fs.statSync(lockPath); if (Date.now() - s.mtimeMs > 5000) { fs.unlinkSync(lockPath); continue; } }
+        catch(e2) { continue; }
+        const jitter = Math.random() * retryMs;
+        require('child_process').execSync(`sleep ${(retryMs + jitter) / 1000}`);
+      } else throw e;
+    }
+  }
+  // Fallback: just run without lock
+  return fn();
+}
+
 function writeToday(text, tag) {
   ensureDir(MEMORY_DIR);
   const today = getToday(), fp = path.join(MEMORY_DIR, `${today}.md`), time = getTime(), tagStr = tag ? ` [${tag}]` : '';
-  let content = fs.existsSync(fp) ? fs.readFileSync(fp, 'utf8') : `# ${today} Daily Log\n\n`;
-  content += `- ${time}${tagStr} ${text}\n`;
-  fs.writeFileSync(fp, content, 'utf8');
-  console.log(JSON.stringify({ status: 'ok', action: 'append_daily', file: `memory/${today}.md`, chars: content.length }));
+  const len = withLock(fp, () => {
+    let content = fs.existsSync(fp) ? fs.readFileSync(fp, 'utf8') : `# ${today} Daily Log\n\n`;
+    content += `- ${time}${tagStr} ${text}\n`;
+    fs.writeFileSync(fp, content, 'utf8');
+    return content.length;
+  });
+  console.log(JSON.stringify({ status: 'ok', action: 'append_daily', file: `memory/${today}.md`, chars: len }));
 }
 
 function writeCore(text, section) {
   const today = getToday();
-  let content = fs.existsSync(MEMORY_MD)
-    ? fs.readFileSync(MEMORY_MD, 'utf8')
-    : `# Long-Term Memory\n\n_Auto-created ${today}. Curated knowledge that persists across sessions._\n\n`;
-
-  if (section) {
-    const hdr = `## ${section.charAt(0).toUpperCase() + section.slice(1)}`;
-    const idx = content.indexOf(hdr);
-    if (idx >= 0) {
-      const after = content.indexOf('\n', idx);
-      const next = content.indexOf('\n## ', after);
-      const at = next >= 0 ? next : content.length;
-      content = content.slice(0, at) + `\n- ${text} _(${today})_\n` + content.slice(at);
+  const len = withLock(MEMORY_MD, () => {
+    let content = fs.existsSync(MEMORY_MD)
+      ? fs.readFileSync(MEMORY_MD, 'utf8')
+      : `# Long-Term Memory\n\n_Auto-created ${today}. Curated knowledge that persists across sessions._\n\n`;
+    if (section) {
+      const hdr = `## ${section.charAt(0).toUpperCase() + section.slice(1)}`;
+      const idx = content.indexOf(hdr);
+      if (idx >= 0) {
+        const after = content.indexOf('\n', idx);
+        const next = content.indexOf('\n## ', after);
+        const at = next >= 0 ? next : content.length;
+        content = content.slice(0, at) + `\n- ${text} _(${today})_\n` + content.slice(at);
+      } else {
+        content += `\n${hdr}\n\n- ${text} _(${today})_\n`;
+      }
     } else {
-      content += `\n${hdr}\n\n- ${text} _(${today})_\n`;
+      content += `\n- ${text} _(${today})_\n`;
     }
-  } else {
-    content += `\n- ${text} _(${today})_\n`;
-  }
-  fs.writeFileSync(MEMORY_MD, content, 'utf8');
-  console.log(JSON.stringify({ status: 'ok', action: 'append_core', file: 'MEMORY.md', section: section || 'root', chars: content.length }));
+    fs.writeFileSync(MEMORY_MD, content, 'utf8');
+    return content.length;
+  });
+  console.log(JSON.stringify({ status: 'ok', action: 'append_core', file: 'MEMORY.md', section: section || 'root', chars: len }));
 }
 
 function healthCheck() {
