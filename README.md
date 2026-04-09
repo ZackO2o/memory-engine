@@ -4,7 +4,7 @@
 
 [![ClawHub](https://img.shields.io/badge/ClawHub-memory--engine--3layer-blue)](https://clawhub.com)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.4.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
+[![Version](https://img.shields.io/badge/version-2.5.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
 
 ## The Problem
 
@@ -267,3 +267,10 @@ MIT
 - **FIX**: Orphan cleanup — `memory-index.js` now removes entries for deleted files (previously accumulated stale records pointing to non-existent files)
 - **IMPROVE**: Temporal decay half-life: 30d → 90d (old memories no longer vanish from search results)
 - **IMPROVE**: Search precision — "Entry 499" now correctly ranks the chunk containing "499" first (was ranking random chunks higher due to score mismatch)
+
+### v2.5.0 (2026-04-09)
+- **FIX (critical)**: memory-flush prompt no longer instructs writing to MEMORY.md (OpenClaw marks it read-only during flush) or running exec commands (may be restricted)
+- **NEW**: `memory-boot.js` — single-command session startup (health + index + MEMORY.md output), saves 2 tool calls per session
+- **NEW**: `postIndexSync: "async"` config — OpenClaw auto-syncs memory index after compaction
+- **IMPROVE**: Cron now detects stale index (files changed but not reindexed) and auto-rebuilds — catches memory-flush writes that didn't trigger reindex
+- **IMPROVE**: SKILL.md now includes warning about memory-flush write restrictions

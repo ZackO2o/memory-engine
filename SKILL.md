@@ -73,9 +73,11 @@ npm install -g better-sqlite3
       "compaction": {
         "memoryFlush": {
           "enabled": true,
-          "softThresholdTokens": 4000
+          "softThresholdTokens": 4000,
+          "prompt": "Pre-compaction memory flush. Store durable memories in memory/YYYY-MM-DD.md (create memory/ if needed). APPEND only, do not overwrite. Include: key decisions, task outcomes, user preferences, project status changes. Format each entry as: - HH:MM [tag] description. If nothing worth storing, reply with NO_REPLY."
         },
-        "reserveTokensFloor": 20000
+        "reserveTokensFloor": 20000,
+        "postIndexSync": "async"
       },
       "heartbeat": {
         "every": "30m"
@@ -85,13 +87,16 @@ npm install -g better-sqlite3
 }
 ```
 
+> **⚠️ Important**: Do NOT instruct memory-flush to write MEMORY.md or run exec commands.
+> During flush, OpenClaw restricts writes to `memory/YYYY-MM-DD.md` only — MEMORY.md, SOUL.md, AGENTS.md are read-only.
+> Exec/shell commands may also be restricted. The cron job handles index rebuilding independently.
+
 ### Step 4: Add rules to AGENTS.md
 ```markdown
 ## Session Startup (MANDATORY)
-1. Read MEMORY.md (curated long-term memory, small file)
-2. Run: node skills/memory-engine/scripts/memory-write.js --status
-3. Run: node skills/memory-engine/scripts/memory-index.js
-4. Use memory-search.js for specific recall (NOT full file reads)
+1. Run: node skills/memory-engine/scripts/memory-boot.js
+   (single command: health check + index update + MEMORY.md content)
+2. Use memory-search.js for specific recall (NOT full file reads)
 
 ## During Conversation (MANDATORY)
 - Key decisions: node skills/memory-engine/scripts/memory-write.js --today "decision" --tag decision

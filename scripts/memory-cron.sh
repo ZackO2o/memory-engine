@@ -37,4 +37,26 @@ if [ "$(date '+%d')" = "01" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] compact: $COMPACT" >> "$LOG"
 fi
 
+# 5. Verify index is in sync (catches memory-flush writes that didn't trigger reindex)
+SYNC_CHECK=$(node -e "
+const fs=require('fs'),p=require('path'),c=require('crypto');
+const ws='$WORKSPACE',mdir=p.join(ws,'memory'),db_path=p.join(ws,'.memory','index.sqlite');
+if(!fs.existsSync(db_path)){console.log('no_index');process.exit(0);}
+const GM=require('child_process').execSync('npm root -g',{encoding:'utf8'}).trim();
+const D=require(p.join(GM,'better-sqlite3'));
+const db=new D(db_path,{readonly:true});
+const dbFiles=db.prepare('SELECT path,hash FROM files').all();
+const dbMap=new Map(dbFiles.map(f=>[f.path,f.hash]));
+let stale=0;
+const hash=c=>require('crypto').createHash('sha256').update(c).digest('hex').slice(0,16);
+if(fs.existsSync(p.join(ws,'MEMORY.md'))){const h=hash(fs.readFileSync(p.join(ws,'MEMORY.md'),'utf8'));if(dbMap.get('MEMORY.md')!==h)stale++;}
+if(fs.existsSync(mdir))fs.readdirSync(mdir).filter(f=>f.endsWith('.md')).forEach(f=>{const h=hash(fs.readFileSync(p.join(mdir,f),'utf8'));if(dbMap.get('memory/'+f)!==h)stale++;});
+console.log(stale?'stale:'+stale:'ok');
+db.close();
+" 2>&1)
+if echo "$SYNC_CHECK" | grep -q "stale"; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] index stale ($SYNC_CHECK), forcing reindex" >> "$LOG"
+    node "$SCRIPT_DIR/memory-index.js" --workspace "$WORKSPACE" --force >> "$LOG" 2>&1
+fi
+
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] cron completed" >> "$LOG"
