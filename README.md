@@ -4,7 +4,7 @@
 
 [![ClawHub](https://img.shields.io/badge/ClawHub-memory--engine--3layer-blue)](https://clawhub.com)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.2.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
+[![Version](https://img.shields.io/badge/version-2.2.1-orange)](https://github.com/ZackO2o/memory-engine/releases)
 
 ## The Problem
 
@@ -248,3 +248,9 @@ Compaction extracts headings + key bullets (✅/🔴/重要), saves originals to
 ## License
 
 MIT
+
+### v2.2.1 (2026-04-09)
+- **FIX**: `heartbeat` config: `enabled`+`intervalMinutes` → `every: "30m"` (matches OpenClaw schema)
+- **FIX**: Timezone-aware dates in all scripts (`TZ` env variable support, `en-CA` locale for YYYY-MM-DD)
+- **FIX**: `memory-compact.js` skips already-compacted files, won't overwrite archive originals
+- **FIX**: `memory-cron.sh` inherits system timezone via `/etc/timezone`

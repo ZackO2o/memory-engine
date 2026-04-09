@@ -78,8 +78,7 @@ npm install -g better-sqlite3
         "reserveTokensFloor": 20000
       },
       "heartbeat": {
-        "enabled": true,
-        "intervalMinutes": 30
+        "every": "30m"
       }
     }
   }

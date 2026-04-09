@@ -30,9 +30,15 @@ function getDailyFiles() {
     .sort();
 }
 
+function getToday() {
+  const tz = process.env.TZ || process.env.OPENCLAW_TZ || 'UTC';
+  try { return new Date().toLocaleDateString('en-CA', { timeZone: tz }); }
+  catch { return new Date().toISOString().slice(0, 10); }
+}
 function fileAgeDays(filename) {
   const dateStr = filename.replace('.md', '');
-  return (Date.now() - new Date(dateStr + 'T00:00:00').getTime()) / 86400000;
+  const today = getToday();
+  return (new Date(today + 'T00:00:00').getTime() - new Date(dateStr + 'T00:00:00').getTime()) / 86400000;
 }
 
 function extractSummary(content, filename) {
@@ -125,8 +131,11 @@ function main() {
       console.log(summary.slice(0, 200) + (summary.length > 200 ? '…' : ''));
       console.log('---');
     } else {
-      // Archive original
-      fs.copyFileSync(fullPath, path.join(ARCHIVE_DIR, file));
+      // Archive original (skip if already compacted)
+      const content_header = content.slice(0, 50);
+      if (content_header.includes('(compacted)')) { continue; } // already compacted
+      const archivePath = path.join(ARCHIVE_DIR, file);
+      if (!fs.existsSync(archivePath)) { fs.copyFileSync(fullPath, archivePath); }
       // Replace with summary
       fs.writeFileSync(fullPath, summary, 'utf8');
       compacted++;

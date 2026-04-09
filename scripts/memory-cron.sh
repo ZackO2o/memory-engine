@@ -6,6 +6,9 @@ WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG="$WORKSPACE/.memory/cron.log"
 
+# Inherit timezone from system or use fallback
+export TZ="${TZ:-$(cat /etc/timezone 2>/dev/null || echo UTC)}"
+
 mkdir -p "$(dirname "$LOG")"
 
 # Rotate log if > 100KB
