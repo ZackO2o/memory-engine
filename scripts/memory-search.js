@@ -113,65 +113,41 @@ function main() {
     candidates = db.prepare('SELECT c.id, c.file_id, c.text, c.heading, c.line_start, c.line_end, f.path, f.date, f.is_core FROM chunks c JOIN files f ON f.id = c.file_id').all();
   }
 
-  if (hasCJK(query)) {
-    // CJK: TF-density scoring
-    for (const chunk of candidates) {
-      const combined = chunk.text + ' ' + (chunk.heading || '');
-      let totalOccurrences = 0, keywordsHit = 0;
-      for (const kw of keywords) {
-        let count = 0, idx = -1;
-        while ((idx = combined.indexOf(kw, idx + 1)) !== -1) count++;
-        if (count > 0) { keywordsHit++; totalOccurrences += count; }
-      }
-      if (keywordsHit > 0) {
-        const density = (totalOccurrences / Math.max(combined.length, 1)) * 100;
-        const coverage = keywordsHit / keywords.length;
-        results.push({ ...chunk, hits: density * (0.5 + 0.5 * coverage) });
-      }
+  // Unified search: FTS5 first (fast), then LIKE fallback (catches substrings FTS5 misses)
+  const seen = new Set();
+
+  // Step 1: Try FTS5 BM25 (only for non-CJK, no date constraint — FTS5 can't filter by file)
+  if (!hasCJK(query) && !hasDateConstraint) {
+    try {
+      const phraseQ = `"${keywords.join(' ')}"`;
+      const phraseResults = db.prepare('SELECT c.id, c.file_id, c.text, c.heading, c.line_start, c.line_end, f.path, f.date, f.is_core, rank FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid JOIN files f ON f.id = c.file_id WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?')
+        .all(phraseQ, maxResults * 2).map(r => ({ ...r, hits: (1 / (1 + Math.max(0, -r.rank))) * 2.0 }));
+      for (const r of phraseResults) { seen.add(r.id); results.push(r); }
+
+      const wordQ = keywords.map(w => `"${w}"`).join(' OR ');
+      const wordResults = db.prepare('SELECT c.id, c.file_id, c.text, c.heading, c.line_start, c.line_end, f.path, f.date, f.is_core, rank FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid JOIN files f ON f.id = c.file_id WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?')
+        .all(wordQ, maxResults * 3).map(r => ({ ...r, hits: 1 / (1 + Math.max(0, -r.rank)) }));
+      for (const r of wordResults) { if (!seen.has(r.id)) { seen.add(r.id); results.push(r); } }
+    } catch (e) { /* FTS5 error — LIKE fallback below will catch it */ }
+  }
+
+  // Step 2: LIKE fallback on all candidates (catches CJK, substrings, date-filtered, FTS5 misses)
+  // Use case-insensitive matching for both CJK bigrams and English substrings
+  const likeCandidates = allowedFileIds ? candidates : (candidates || db.prepare('SELECT c.id, c.file_id, c.text, c.heading, c.line_start, c.line_end, f.path, f.date, f.is_core FROM chunks c JOIN files f ON f.id = c.file_id').all());
+  for (const chunk of likeCandidates) {
+    if (seen.has(chunk.id)) continue; // already found by FTS5
+    const combined = (chunk.text + ' ' + (chunk.heading || '')).toLowerCase();
+    let totalOccurrences = 0, keywordsHit = 0;
+    for (const kw of keywords) {
+      const kwLower = kw.toLowerCase();
+      let count = 0, idx = -1;
+      while ((idx = combined.indexOf(kwLower, idx + 1)) !== -1) count++;
+      if (count > 0) { keywordsHit++; totalOccurrences += count; }
     }
-  } else {
-    // English: FTS5 BM25 with phrase boost
-    if (!hasDateConstraint) {
-      try {
-        // Try phrase match first (higher quality)
-        const phraseQ = `"${keywords.join(' ')}"`;
-        const phraseResults = db.prepare('SELECT c.id, c.text, c.heading, c.line_start, c.line_end, f.path, f.date, f.is_core, rank FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid JOIN files f ON f.id = c.file_id WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?')
-          .all(phraseQ, maxResults * 2).map(r => ({ ...r, hits: (1 / (1 + Math.max(0, -r.rank))) * 2.0 })); // 2x boost for phrase match
-
-        // Also get individual word matches
-        const wordQ = keywords.map(w => `"${w}"`).join(' OR ');
-        const wordResults = db.prepare('SELECT c.id, c.text, c.heading, c.line_start, c.line_end, f.path, f.date, f.is_core, rank FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid JOIN files f ON f.id = c.file_id WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?')
-          .all(wordQ, maxResults * 3).map(r => ({ ...r, hits: 1 / (1 + Math.max(0, -r.rank)) }));
-
-        // Merge, deduplicate by chunk id (phrase match wins)
-        const seen = new Set();
-        for (const r of phraseResults) { seen.add(r.id); results.push(r); }
-        for (const r of wordResults) { if (!seen.has(r.id)) { seen.add(r.id); results.push(r); } }
-      } catch (e) {
-        // Fallback to LIKE
-        for (const chunk of candidates) {
-          const combined = (chunk.text + ' ' + (chunk.heading || '')).toLowerCase();
-          let hits = 0;
-          for (const kw of keywords) if (combined.includes(kw)) hits++;
-          if (hits > 0) results.push({ ...chunk, hits });
-        }
-      }
-    } else {
-      // Date-filtered: use LIKE on pre-filtered candidates
-      for (const chunk of candidates) {
-        const combined = (chunk.text + ' ' + (chunk.heading || '')).toLowerCase();
-        let totalOccurrences = 0, keywordsHit = 0;
-        for (const kw of keywords) {
-          let count = 0, idx = -1;
-          while ((idx = combined.indexOf(kw, idx + 1)) !== -1) count++;
-          if (count > 0) { keywordsHit++; totalOccurrences += count; }
-        }
-        if (keywordsHit > 0) {
-          const density = (totalOccurrences / Math.max(combined.length, 1)) * 100;
-          const coverage = keywordsHit / keywords.length;
-          results.push({ ...chunk, hits: density * (0.5 + 0.5 * coverage) });
-        }
-      }
+    if (keywordsHit > 0) {
+      const density = (totalOccurrences / Math.max(combined.length, 1)) * 100;
+      const coverage = keywordsHit / keywords.length;
+      results.push({ ...chunk, hits: density * (0.5 + 0.5 * coverage) });
     }
   }
 

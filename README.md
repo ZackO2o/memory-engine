@@ -4,7 +4,7 @@
 
 [![ClawHub](https://img.shields.io/badge/ClawHub-memory--engine--3layer-blue)](https://clawhub.com)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.2.1-orange)](https://github.com/ZackO2o/memory-engine/releases)
+[![Version](https://img.shields.io/badge/version-2.3.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
 
 ## The Problem
 
@@ -254,3 +254,10 @@ MIT
 - **FIX**: Timezone-aware dates in all scripts (`TZ` env variable support, `en-CA` locale for YYYY-MM-DD)
 - **FIX**: `memory-compact.js` skips already-compacted files, won't overwrite archive originals
 - **FIX**: `memory-cron.sh` inherits system timezone via `/etc/timezone`
+
+### v2.3.0 (2026-04-09)
+- **FIX (critical)**: Search now uses unified FTS5 + LIKE fallback — previously FTS5 missed substrings like `XYZ789`, alphanumeric tokens, and CJK-mixed queries
+- **FIX**: Removed redundant code paths (CJK-only vs English-only vs date-filtered) — single unified search logic handles all cases
+- **FIX**: `memory-compact.js` uses timezone-aware date comparison (`getToday()`)
+- **IMPROVE**: LIKE fallback uses case-insensitive matching for both CJK and English
+- **IMPROVE**: All search paths now use TF-density scoring for consistent ranking
