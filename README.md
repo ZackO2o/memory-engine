@@ -4,7 +4,7 @@
 
 [![ClawHub](https://img.shields.io/badge/ClawHub-memory--engine--3layer-blue)](https://clawhub.com)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Version](https://img.shields.io/badge/version-2.6.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
+[![Version](https://img.shields.io/badge/version-2.7.0-orange)](https://github.com/ZackO2o/memory-engine/releases)
 
 ## The Problem
 
@@ -281,3 +281,9 @@ MIT
 - **FIX**: Date-only queries exclude undated files (MEMORY.md) to focus on the requested day's content
 - **IMPROVE**: `memory-boot.js` retries with `--force` if initial index update fails
 - **IMPROVE**: SKILL.md now documents `memory-boot.js` in Commands section
+
+### v2.7.0 (2026-04-09)
+- **FIX (critical)**: Unified timezone resolution across all scripts — now reads `userTimezone` from `openclaw.json` automatically, matching OpenClaw's memory-flush date calculation. Previously scripts used `TZ` env var (often UTC in cron), causing date mismatches where flush writes `memory/2026-04-10.md` but our scripts think today is `2026-04-09`.
+- **NEW**: `_timezone.js` shared module — single source of truth for timezone resolution
+- **NEW**: Resolution order: `OPENCLAW_TZ` > `openclaw.json userTimezone` > `TZ` > `/etc/timezone` > `/etc/localtime` > `UTC`
+- **IMPROVE**: `memory-cron.sh` reads timezone from `openclaw.json` instead of relying on system TZ

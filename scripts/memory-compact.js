@@ -30,14 +30,10 @@ function getDailyFiles() {
     .sort();
 }
 
-function getToday() {
-  const tz = process.env.TZ || process.env.OPENCLAW_TZ || 'UTC';
-  try { return new Date().toLocaleDateString('en-CA', { timeZone: tz }); }
-  catch { return new Date().toISOString().slice(0, 10); }
-}
+const { getToday: _getToday } = require('./_timezone');
 function fileAgeDays(filename) {
   const dateStr = filename.replace('.md', '');
-  const today = getToday();
+  const today = _getToday(workspace);
   return (new Date(today + 'T00:00:00').getTime() - new Date(dateStr + 'T00:00:00').getTime()) / 86400000;
 }
 

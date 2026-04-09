@@ -23,16 +23,9 @@ for (let i = 0; i < args.length; i++) {
 const MEMORY_DIR = path.join(workspace, 'memory');
 const MEMORY_MD = path.join(workspace, 'MEMORY.md');
 function ensureDir(dir) { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); }
-function getToday() {
-  const tz = process.env.TZ || process.env.OPENCLAW_TZ || 'UTC';
-  try { return new Date().toLocaleDateString('en-CA', { timeZone: tz }); } // en-CA gives YYYY-MM-DD
-  catch { return new Date().toISOString().slice(0, 10); }
-}
-function getTime() {
-  const tz = process.env.TZ || process.env.OPENCLAW_TZ || 'UTC';
-  try { return new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', timeZone: tz }); }
-  catch { return new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }); }
-}
+const { getToday: _getToday, getTime: _getTime } = require('./_timezone');
+function getToday() { return _getToday(workspace); }
+function getTime() { return _getTime(workspace); }
 
 // File lock using .lock file with retry
 function withLock(filePath, fn) {

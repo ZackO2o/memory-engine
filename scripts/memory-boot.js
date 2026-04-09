@@ -22,11 +22,8 @@ for (let i = 0; i < args.length; i++) {
 const MEMORY_DIR = path.join(workspace, 'memory');
 const MEMORY_MD = path.join(workspace, 'MEMORY.md');
 
-function getToday() {
-  const tz = process.env.TZ || process.env.OPENCLAW_TZ || 'UTC';
-  try { return new Date().toLocaleDateString('en-CA', { timeZone: tz }); }
-  catch { return new Date().toISOString().slice(0, 10); }
-}
+const { getToday: _getToday } = require('./_timezone');
+function getToday() { return _getToday(workspace); }
 
 // 1. Health check (inline, no separate script call)
 function healthCheck() {

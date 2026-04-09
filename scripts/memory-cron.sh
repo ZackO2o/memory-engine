@@ -6,8 +6,15 @@ WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG="$WORKSPACE/.memory/cron.log"
 
-# Inherit timezone from system or use fallback
-export TZ="${TZ:-$(cat /etc/timezone 2>/dev/null || echo UTC)}"
+# Resolve timezone: OPENCLAW_TZ > openclaw.json > TZ > /etc/timezone > /etc/localtime > UTC
+if [ -z "$TZ" ]; then
+  OPENCLAW_CFG="$WORKSPACE/../openclaw.json"
+  if [ -f "$OPENCLAW_CFG" ]; then
+    DETECTED_TZ=$(node -e "try{const c=require('$OPENCLAW_CFG');console.log(c?.agents?.defaults?.userTimezone||'')}catch{}" 2>/dev/null)
+    [ -n "$DETECTED_TZ" ] && export TZ="$DETECTED_TZ"
+  fi
+fi
+export TZ="${TZ:-$(cat /etc/timezone 2>/dev/null || readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||' || echo UTC)}"
 
 mkdir -p "$(dirname "$LOG")"
 
