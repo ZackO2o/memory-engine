@@ -38,10 +38,32 @@ if [ "$HAS_TODAY" = "false" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] auto-created daily log" >> "$LOG"
 fi
 
-# 4. Auto-compact files older than 60 days (monthly, on the 1st)
+# 4. Auto-extract from reset sessions (scan unprocessed sessions)
+if [ -f "$SCRIPT_DIR/memory-auto-extract.js" ]; then
+    EXTRACT=$(node "$SCRIPT_DIR/memory-auto-extract.js" --workspace "$WORKSPACE" --scan 2>&1)
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] auto-extract: $EXTRACT" >> "$LOG"
+fi
+
+# 5. Auto-compact files older than 60 days (monthly, on the 1st)
 if [ "$(date '+%d')" = "01" ]; then
     COMPACT=$(node "$SCRIPT_DIR/memory-compact.js" --workspace "$WORKSPACE" --older-than 60 2>&1)
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] compact: $COMPACT" >> "$LOG"
+fi
+
+# 6. Session size warning (write to daily log if > 4MB)
+SESS_DIR="$HOME/.openclaw/agents/main/sessions"
+if [ -d "$SESS_DIR" ]; then
+    ACTIVE=$(find "$SESS_DIR" -name "*.jsonl" ! -name "*.reset.*" ! -name "*.deleted.*" ! -name "*.lock" -printf '%s %p\n' 2>/dev/null | sort -rn | head -1)
+    if [ -n "$ACTIVE" ]; then
+        SIZE_BYTES=$(echo "$ACTIVE" | awk '{print $1}')
+        SIZE_MB=$(echo "$SIZE_BYTES" | awk '{printf "%.1f", $1/1048576}')
+        if [ "$(echo "$SIZE_MB > 8" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
+            node "$SCRIPT_DIR/memory-write.js" --workspace "$WORKSPACE" --today "[warning] 会话已达 ${SIZE_MB}MB，即将触发 reset！请主动做摘要压缩" --tag warning
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: session ${SIZE_MB}MB" >> "$LOG"
+        elif [ "$(echo "$SIZE_MB > 4" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] session size: ${SIZE_MB}MB" >> "$LOG"
+        fi
+    fi
 fi
 
 # 5. Verify index is in sync (catches memory-flush writes that didn't trigger reindex)

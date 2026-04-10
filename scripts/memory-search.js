@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 /**
- * memory-search.js v2.1.0 — BM25 + CJK bigram + date filter + phrase matching
+ * memory-search.js v2.2.0 — BM25 + CJK bigram + date filter + phrase matching + --last N
  * Usage:
  *   node memory-search.js "query" [--max 3] [--max-chars 200] [--json]
  *   node memory-search.js "query" --date 2026-04-02      # filter by exact date
  *   node memory-search.js "query" --after 2026-04-01     # after date
  *   node memory-search.js "query" --before 2026-04-08    # before date
  *   node memory-search.js "query" --recent 7             # last N days
+ *   node memory-search.js --last 5                       # last N log entries (no query needed)
+ *   node memory-search.js --last 10 --today              # today's last 10 entries
+ *   node memory-search.js --last 3 --tag done            # last 3 entries with [done] tag
  */
 const fs = require('fs'), path = require('path');
 const GLOBAL_MODULES = require('child_process').execSync('npm root -g', { encoding: 'utf8' }).trim();
@@ -18,6 +21,7 @@ const HALF_LIFE_DAYS = 90; // 90-day half-life: balanced recency vs long-term re
 const args = process.argv.slice(2);
 let query = '', maxResults = 3, maxChars = 200, jsonOutput = false, workspace = DEFAULT_WORKSPACE;
 let dateFilter = null, afterDate = null, beforeDate = null, recentDays = 0;
+let lastN = 0, tagFilter = '', todayOnly = false;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--max' && args[i + 1]) { maxResults = parseInt(args[++i]); continue; }
   if (args[i] === '--max-chars' && args[i + 1]) { maxChars = parseInt(args[++i]); continue; }
@@ -27,9 +31,54 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--after' && args[i + 1]) { afterDate = args[++i]; continue; }
   if (args[i] === '--before' && args[i + 1]) { beforeDate = args[++i]; continue; }
   if (args[i] === '--recent' && args[i + 1]) { recentDays = parseInt(args[++i]); continue; }
+  if (args[i] === '--last' && args[i + 1]) { lastN = parseInt(args[++i]); continue; }
+  if (args[i] === '--tag' && args[i + 1]) { tagFilter = args[++i]; continue; }
+  if (args[i] === '--today') { todayOnly = true; continue; }
   if (!query) query = args[i];
 }
-if (!query) { console.error('Usage: memory-search.js "query" [--max N] [--date YYYY-MM-DD] [--recent N] [--json]'); process.exit(1); }
+
+// --last N mode: read recent log entries directly (no FTS5 needed)
+if (lastN > 0) {
+  const { getToday: _gt } = require('./_timezone');
+  const today = _gt(workspace);
+  const MDIR = path.join(workspace, 'memory');
+  if (!fs.existsSync(MDIR)) { console.log('[memory] No memory directory.'); process.exit(0); }
+  const files = fs.readdirSync(MDIR).filter(f => f.match(/^\d{4}-\d{2}-\d{2}\.md$/)).sort().reverse();
+  if (todayOnly) {
+    const tf = files.find(f => f === `${today}.md`);
+    if (!tf) { console.log(`[memory] No log for today (${today}).`); process.exit(0); }
+  }
+  const entries = [];
+  for (const f of files) {
+    if (todayOnly && f !== `${today}.md`) continue;
+    const date = f.replace('.md', '');
+    const content = fs.readFileSync(path.join(MDIR, f), 'utf8');
+    for (const line of content.split('\n')) {
+      const m = line.match(/^- (\d{2}:\d{2})\s*(?:\[([^\]]+)\])?\s*(.+)/);
+      if (m) {
+        const [, time, tag, text] = m;
+        if (tagFilter && tag !== tagFilter) continue;
+        entries.push({ date, time, tag: tag || '', text: text.trim() });
+      }
+    }
+    if (entries.length >= lastN * 3 && !todayOnly) break; // read enough files
+  }
+  // Sort by date+time descending, take lastN
+  entries.sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+  const top = entries.slice(0, lastN);
+  if (jsonOutput) {
+    console.log(JSON.stringify({ status: 'ok', mode: 'last', count: top.length, entries: top }));
+  } else if (top.length === 0) {
+    console.log(`[memory] No entries found${tagFilter ? ` with tag [${tagFilter}]` : ''}.`);
+  } else {
+    for (const e of top) {
+      console.log(`${e.date} ${e.time} ${e.tag ? `[${e.tag}]` : ''} ${e.text}`);
+    }
+  }
+  process.exit(0);
+}
+
+if (!query) { console.error('Usage: memory-search.js "query" [--max N] [--date YYYY-MM-DD] [--recent N] [--last N] [--tag T] [--today] [--json]'); process.exit(1); }
 
 const DB_PATH = path.join(workspace, '.memory', 'index.sqlite');
 if (!fs.existsSync(DB_PATH)) { console.error(JSON.stringify({ status: 'error', message: 'No index. Run memory-index.js first.' })); process.exit(1); }

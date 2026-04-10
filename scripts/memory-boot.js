@@ -120,10 +120,24 @@ function readCore(limit) {
   return result.trimEnd() + `\n\n_(truncated: ${content.length} chars → ${result.length} chars)_`;
 }
 
+// 4. Session size warning
+function checkSessionSize() {
+  const sessDir = path.join(process.env.HOME, '.openclaw/agents/main/sessions');
+  if (!fs.existsSync(sessDir)) return null;
+  const active = fs.readdirSync(sessDir)
+    .filter(f => f.endsWith('.jsonl') && !f.includes('.reset.') && !f.includes('.deleted.') && !f.includes('.lock'))
+    .map(f => ({ name: f, size: fs.statSync(path.join(sessDir, f)).size }))
+    .sort((a, b) => b.size - a.size);
+  if (active.length === 0) return null;
+  const sizeMB = active[0].size / 1048576;
+  return { file: active[0].name, sizeMB: Math.round(sizeMB * 10) / 10 };
+}
+
 // Run all
 const health = healthCheck();
 const index = updateIndex();
 const core = readCore(maxChars);
+const session = checkSessionSize();
 
 // Compact output
 const warnings = [];
@@ -131,8 +145,10 @@ if (!health.hasCore) warnings.push('⚠️ MEMORY.md missing');
 if (!health.hasTodayLog) warnings.push(`⚠️ No log for ${health.today}`);
 if (health.gaps > 3) warnings.push(`⚠️ ${health.gaps} gaps in 14 days`);
 if (index.cleaned > 0) warnings.push(`🧹 Cleaned ${index.cleaned} orphan(s)`);
+if (session && session.sizeMB > 8) warnings.push(`🔴 Session ${session.sizeMB}MB — approaching reset!`);
+else if (session && session.sizeMB > 4) warnings.push(`🟡 Session ${session.sizeMB}MB — consider summarizing`);
 
-console.log(`[boot] Health: ${health.score}/100 | Files: ${health.dailyFiles} | Index: ${index.totalChunks || '?'} chunks${index.indexed > 0 ? ` (${index.indexed} updated)` : ''}${warnings.length ? ' | ' + warnings.join(' | ') : ''}`);
+console.log(`[boot] Health: ${health.score}/100 | Files: ${health.dailyFiles} | Index: ${index.totalChunks || '?'} chunks${session ? ` | Session: ${session.sizeMB}MB` : ''}${index.indexed > 0 ? ` (${index.indexed} updated)` : ''}${warnings.length ? ' | ' + warnings.join(' | ') : ''}`);
 if (core) {
   console.log('---');
   console.log(core);

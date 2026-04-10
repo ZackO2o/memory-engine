@@ -142,6 +142,16 @@ Health output:
 }
 ```
 
+### Resume (zero-latency session recovery) — NEW in v3.0
+```bash
+node scripts/memory-resume.js                    # generate recovery summary (<2000 tokens)
+node scripts/memory-resume.js --max-chars 1000   # shorter for tight budgets
+```
+Use in AGENTS.md as the first session startup step. Outputs:
+- Last session's final topic & status
+- Recent 3 days' key entries (priority-sorted by tag)
+- Active MEMORY.md sections summary
+
 ### Search (0 tokens, ~300 token results)
 ```bash
 node scripts/memory-search.js "deployment plan"          # top 3, 200 chars
@@ -153,6 +163,12 @@ node scripts/memory-search.js "4月2日完成了什么"          # auto date fil
 node scripts/memory-search.js "tasks" --date 2026-04-02  # exact date
 node scripts/memory-search.js "progress" --recent 7      # last 7 days
 node scripts/memory-search.js "bugs" --after 2026-04-01 --before 2026-04-08
+
+# Last N entries (no query needed, time-ordered) — NEW in v3.0
+node scripts/memory-search.js --last 5                   # last 5 entries across all logs
+node scripts/memory-search.js --last 10 --today          # today's last 10
+node scripts/memory-search.js --last 3 --tag done        # last 3 [done] entries
+node scripts/memory-search.js --last 5 --tag decision    # last 5 decisions
 ```
 
 ### Index
@@ -166,7 +182,23 @@ node scripts/memory-index.js --force  # full rebuild
 node scripts/memory-maintain.js              # show stats
 node scripts/memory-maintain.js --reindex    # force rebuild
 node scripts/memory-maintain.js --prune-days 90  # trim old entries
+
+# GC: detect & remove stale MEMORY.md entries — NEW in v3.0
+node scripts/memory-maintain.js --gc             # preview stale entries
+node scripts/memory-maintain.js --gc --apply     # remove them
 ```
+GC detects: old version references (>14d), completed TODOs, entries >60d old, duplicates.
+
+### Auto-Extract (session transcript mining) — NEW in v3.0
+```bash
+node scripts/memory-auto-extract.js                # extract from active session
+node scripts/memory-auto-extract.js <path.jsonl>   # extract from specific file
+node scripts/memory-auto-extract.js --scan          # scan all unprocessed reset sessions
+node scripts/memory-auto-extract.js --dry-run       # preview without writing
+```
+Extracts: git commits, file writes, deployments, PM2 restarts, user instructions.
+Automatically deduplicates against existing log entries.
+Integrated into cron: auto-scans reset sessions every 6h.
 
 ### Compact (compress old logs)
 ```bash

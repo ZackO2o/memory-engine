@@ -49,16 +49,47 @@ function withLock(filePath, fn) {
   return fn();
 }
 
+function simpleNormalize(s) {
+  return s.toLowerCase().replace(/[^\w\u4e00-\u9fff]/g, '').trim();
+}
+
+function isDuplicate(existing, newText) {
+  // Check last 5 entries for >80% similarity
+  const lines = existing.split('\n').filter(l => l.match(/^- \d{2}:\d{2}/)).slice(-5);
+  const normNew = simpleNormalize(newText);
+  if (normNew.length < 5) return false; // too short to deduplicate
+  for (const line of lines) {
+    const m = line.match(/^- \d{2}:\d{2}\s*(?:\[[^\]]+\])?\s*(.+)/);
+    if (!m) continue;
+    const normOld = simpleNormalize(m[1]);
+    // Exact match after normalization
+    if (normOld === normNew) return true;
+    // One contains the other (>80% overlap)
+    if (normOld.length > 15 && normNew.length > 15) {
+      if (normOld.includes(normNew) || normNew.includes(normOld)) return true;
+    }
+  }
+  return false;
+}
+
 function writeToday(text, tag) {
   ensureDir(MEMORY_DIR);
   const today = getToday(), fp = path.join(MEMORY_DIR, `${today}.md`), time = getTime(), tagStr = tag ? ` [${tag}]` : '';
-  const len = withLock(fp, () => {
+  const result = withLock(fp, () => {
     let content = fs.existsSync(fp) ? fs.readFileSync(fp, 'utf8') : `# ${today} Daily Log\n\n`;
+    // Dedup check: skip if very similar to recent entries
+    if (isDuplicate(content, text)) {
+      return { len: content.length, skipped: true };
+    }
     content += `- ${time}${tagStr} ${text}\n`;
     fs.writeFileSync(fp, content, 'utf8');
-    return content.length;
+    return { len: content.length, skipped: false };
   });
-  console.log(JSON.stringify({ status: 'ok', action: 'append_daily', file: `memory/${today}.md`, chars: len }));
+  if (result.skipped) {
+    console.log(JSON.stringify({ status: 'ok', action: 'skipped_duplicate', file: `memory/${today}.md`, chars: result.len, note: 'Similar entry exists in last 5 entries' }));
+  } else {
+    console.log(JSON.stringify({ status: 'ok', action: 'append_daily', file: `memory/${today}.md`, chars: result.len }));
+  }
 }
 
 function writeCore(text, section) {
