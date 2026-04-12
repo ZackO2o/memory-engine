@@ -49,8 +49,30 @@ function healthCheck() {
   return { today, hasTodayLog, hasCore, dailyFiles: files.length, gaps, score };
 }
 
+// Detect if OpenClaw native memorySearch is active
+function detectNativeMemorySearch() {
+  try {
+    const cfgPath = path.join(workspace, '../openclaw.json');
+    if (!fs.existsSync(cfgPath)) return false;
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    const ms = cfg?.agents?.defaults?.memorySearch;
+    // If memorySearch config exists and isn't explicitly disabled
+    if (ms && ms.enabled !== false) return true;
+    // Also check if memory_search tool type file exists (new OpenClaw)
+    const npmRoot = require('child_process').execSync('npm root -g', { encoding: 'utf8', timeout: 5000 }).trim();
+    const toolPath = path.join(npmRoot, 'openclaw/dist/plugin-sdk/agents/tools/memory-tool.d.ts');
+    return fs.existsSync(toolPath);
+  } catch { return false; }
+}
+
+const nativeSearchAvailable = detectNativeMemorySearch();
+
 // 2. Index update (auto-recovers from corrupted DB)
+// When native memorySearch is active, skip FTS5 indexing (native handles it)
 function updateIndex() {
+  if (nativeSearchAvailable) {
+    return { totalChunks: '(native)', indexed: 0, mode: 'native' };
+  }
   const indexScript = path.join(__dirname, 'memory-index.js');
   if (!fs.existsSync(indexScript)) return { indexed: 0, error: 'index script not found' };
   try {
@@ -148,7 +170,8 @@ if (index.cleaned > 0) warnings.push(`🧹 Cleaned ${index.cleaned} orphan(s)`);
 if (session && session.sizeMB > 8) warnings.push(`🔴 Session ${session.sizeMB}MB — approaching reset!`);
 else if (session && session.sizeMB > 4) warnings.push(`🟡 Session ${session.sizeMB}MB — consider summarizing`);
 
-console.log(`[boot] Health: ${health.score}/100 | Files: ${health.dailyFiles} | Index: ${index.totalChunks || '?'} chunks${session ? ` | Session: ${session.sizeMB}MB` : ''}${index.indexed > 0 ? ` (${index.indexed} updated)` : ''}${warnings.length ? ' | ' + warnings.join(' | ') : ''}`);
+const modeTag = nativeSearchAvailable ? ' | 🔍 Native search' : ' | 🔍 FTS5';
+console.log(`[boot] Health: ${health.score}/100 | Files: ${health.dailyFiles} | Index: ${index.totalChunks || '?'} chunks${session ? ` | Session: ${session.sizeMB}MB` : ''}${index.indexed > 0 ? ` (${index.indexed} updated)` : ''}${modeTag}${warnings.length ? ' | ' + warnings.join(' | ') : ''}`);
 if (core) {
   console.log('---');
   console.log(core);

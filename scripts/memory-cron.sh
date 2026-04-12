@@ -1,6 +1,7 @@
 #!/bin/bash
 # memory-cron.sh — System-level memory maintenance (runs independently of AI)
-# Install: (crontab -l; echo "0 */6 * * * /path/to/memory-cron.sh") | crontab -
+# Install: (crontab -l; echo "0 * * * * /path/to/memory-cron.sh") | crontab -
+# Recommended: every 1h (was 6h pre-v4.0). Watcher handles real-time reset detection.
 
 WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -41,7 +42,10 @@ fi
 # 4. Auto-extract from reset sessions (scan unprocessed sessions)
 if [ -f "$SCRIPT_DIR/memory-auto-extract.js" ]; then
     EXTRACT=$(node "$SCRIPT_DIR/memory-auto-extract.js" --workspace "$WORKSPACE" --scan 2>&1)
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] auto-extract: $EXTRACT" >> "$LOG"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] auto-extract(reset): $EXTRACT" >> "$LOG"
+    # P1: Also extract incrementally from active sessions
+    ACTIVE_EXTRACT=$(node "$SCRIPT_DIR/memory-auto-extract.js" --workspace "$WORKSPACE" --active 2>&1)
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] auto-extract(active): $ACTIVE_EXTRACT" >> "$LOG"
 fi
 
 # 5. Auto-compact files older than 60 days (monthly, on the 1st)
@@ -88,9 +92,25 @@ if echo "$SYNC_CHECK" | grep -q "stale"; then
     node "$SCRIPT_DIR/memory-index.js" --workspace "$WORKSPACE" --force >> "$LOG" 2>&1
 fi
 
+# 7. Ensure watcher is running (P0: session reset hook)
+WATCHER_PID_FILE="$WORKSPACE/.memory/watcher.pid"
+WATCHER_ALIVE=false
+if [ -f "$WATCHER_PID_FILE" ]; then
+  WATCHER_PID=$(cat "$WATCHER_PID_FILE")
+  if kill -0 "$WATCHER_PID" 2>/dev/null; then
+    WATCHER_ALIVE=true
+  fi
+fi
+if ! $WATCHER_ALIVE; then
+  nohup bash "$SCRIPT_DIR/memory-watcher.sh" >> "$WORKSPACE/.memory/watcher.log" 2>&1 &
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] watcher restarted (PID: $!)" >> "$LOG"
+else
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] watcher alive (PID: $WATCHER_PID)" >> "$LOG"
+fi
+
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] cron completed" >> "$LOG"
 
-# Step 6: Auto-backup to GitHub (if git remote configured)
+# 8. Auto-backup to GitHub (if git remote configured)
 BACKUP_SCRIPT="$DIR/memory-backup.sh"
 if [ -f "$BACKUP_SCRIPT" ] && [ -d "$WORKSPACE/.git" ]; then
   log "starting backup"

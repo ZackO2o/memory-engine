@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 /**
- * memory-search.js v2.2.0 — BM25 + CJK bigram + date filter + phrase matching + --last N
+ * memory-search.js v5.0.0 — Dual-mode search: native memorySearch + FTS5 fallback
+ * 
+ * v5.0: When OpenClaw native memory_search is available, outputs a hint to use it.
+ *       FTS5 mode still works as fallback and for features native doesn't have:
+ *       --last N, --tag, --today, --date, --after, --before, --recent
+ * 
  * Usage:
  *   node memory-search.js "query" [--max 3] [--max-chars 200] [--json]
  *   node memory-search.js "query" --date 2026-04-02      # filter by exact date
@@ -10,6 +15,7 @@
  *   node memory-search.js --last 5                       # last N log entries (no query needed)
  *   node memory-search.js --last 10 --today              # today's last 10 entries
  *   node memory-search.js --last 3 --tag done            # last 3 entries with [done] tag
+ *   node memory-search.js --mode fts5 "query"            # force FTS5 mode (skip native hint)
  */
 const fs = require('fs'), path = require('path');
 const GLOBAL_MODULES = require('child_process').execSync('npm root -g', { encoding: 'utf8' }).trim();

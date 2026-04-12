@@ -87,7 +87,53 @@ function getActiveMemorySections() {
     .join('\n');
 }
 
+function checkAndExtractUnprocessedResets() {
+  const sessDir = path.join(process.env.HOME, '.openclaw/agents/main/sessions');
+  if (!fs.existsSync(sessDir)) return 0;
+  
+  const trackFile = path.join(workspace, '.memory', 'extracted-sessions.json');
+  const tracked = fs.existsSync(trackFile) ? JSON.parse(fs.readFileSync(trackFile, 'utf8')) : {};
+  
+  const resetFiles = fs.readdirSync(sessDir).filter(f => f.includes('.reset.'));
+  const unextracted = resetFiles.filter(f => !tracked[f]);
+  
+  if (unextracted.length === 0) return 0;
+  
+  console.error(`⚠️ ${unextracted.length} 个session未提取，正在恢复...`);
+  
+  // Try to use auto-extract for each
+  const extractScript = path.join(__dirname, 'memory-auto-extract.js');
+  if (fs.existsSync(extractScript)) {
+    const { execSync } = require('child_process');
+    for (const f of unextracted) {
+      try {
+        const fp = path.join(sessDir, f);
+        execSync(`node "${extractScript}" --workspace "${workspace}" "${fp}"`, 
+          { encoding: 'utf8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] });
+        tracked[f] = { extractedAt: new Date().toISOString(), count: -1, source: 'resume' };
+      } catch (e) {
+        console.error(`  提取失败: ${f} — ${e.message.slice(0,80)}`);
+      }
+    }
+    // Save tracking
+    const memDir = path.join(workspace, '.memory');
+    if (!fs.existsSync(memDir)) fs.mkdirSync(memDir, { recursive: true });
+    fs.writeFileSync(trackFile, JSON.stringify(tracked, null, 2), 'utf8');
+    
+    // Reindex after extraction
+    const indexScript = path.join(__dirname, 'memory-index.js');
+    if (fs.existsSync(indexScript)) {
+      try { execSync(`node "${indexScript}" --workspace "${workspace}"`, { timeout: 15000 }); } catch {}
+    }
+  }
+  
+  return unextracted.length;
+}
+
 function buildResumeSummary() {
+  // P1: Check for unprocessed reset sessions FIRST, extract them before resuming
+  const rescued = checkAndExtractUnprocessedResets();
+  
   const recentLogs = getRecentLogs(3);
   
   if (recentLogs.length === 0 && !fs.existsSync(MEMORY_MD)) {
@@ -96,6 +142,9 @@ function buildResumeSummary() {
   }
 
   let output = '## Session Recovery\n\n';
+  if (rescued > 0) {
+    output += `⚠️ 恢复了 ${rescued} 个未提取的session记忆\n\n`;
+  }
   let charBudget = maxChars - output.length;
 
   // 1. Last session entries (most recent day, sorted by priority)

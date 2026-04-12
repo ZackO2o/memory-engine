@@ -1,6 +1,6 @@
 ---
 name: memory-engine
-description: "Persistent memory system for OpenClaw with three-layer anti-amnesia protection. Layer 1 (system): cron job auto-rebuilds index every 6h + auto-creates daily logs. Layer 2 (platform): works with OpenClaw's built-in memory-flush (auto-triggered before compaction). Layer 3 (agent): write/search/maintain scripts for the AI to call. Uses SQLite FTS5, BM25 + CJK bigram search, temporal decay ranking. Search costs 0 tokens, returns ~300 tokens of compact snippets. No embedding API needed. Use when: recalling past conversations, writing memory entries, checking memory health, maintaining search index. Triggers: 'remember', 'recall', 'what did we discuss', 'memory status', 'search memory', 'reindex'."
+description: "Memory guardian for OpenClaw — three-layer anti-amnesia with real-time session reset watcher. v5.0: works alongside OpenClaw native memorySearch (vector+hybrid) when available, falls back to built-in FTS5 when not. Focuses on what native lacks: auto-write, session extraction, watcher daemon, GC, health checks, backup. Layer 1 (system): cron every 1h + watcher detects resets <30s + active-session incremental extraction. Layer 2 (platform): memory-flush + session-memory hook. Layer 3 (agent): write/search/maintain/boot scripts. Seamless upgrade: run memory-migrate.js to enable native features, zero data loss. Use when: recalling past conversations, writing memory entries, checking memory health, maintaining search index. Triggers: 'remember', 'recall', 'what did we discuss', 'memory status', 'search memory', 'reindex'."
 ---
 
 # Memory Engine 🧠⚡
@@ -16,27 +16,67 @@ AI agents wake up blank every session. Existing solutions either:
 
 Memory Engine solves all three.
 
+## v5.0 — Memory Guardian Architecture
+
+**v5.0 redefines Memory Engine's role**: instead of a "full-stack memory system", it's now a **memory guardian** — handling everything OpenClaw native memory *doesn't* do.
+
+| Feature | Native memorySearch | Memory Engine |
+|---------|-------------------|---------------|
+| Semantic vector search | ✅ (embedding API) | ❌ (deferred to native) |
+| BM25 keyword search | ✅ (hybrid mode) | ✅ (FTS5 fallback) |
+| Auto-write daily logs | ❌ | ✅ `memory-write.js` |
+| Session reset detection | ❌ | ✅ `memory-watcher.sh` (<30s) |
+| Active session extraction | ❌ | ✅ `--active` mode |
+| Health check + GC | ❌ | ✅ `memory-maintain.js` |
+| Session resume context | ❌ | ✅ `memory-resume.js` |
+| GitHub backup/restore | ❌ | ✅ `memory-backup.sh` |
+| Zero-dep writing | ❌ (needs embedding API) | ✅ (pure Node.js) |
+
+### Upgrade from v3/v4 (zero data loss)
+```bash
+node scripts/memory-migrate.js              # preview changes
+node scripts/memory-migrate.js --apply      # apply (backs up config first)
+node scripts/memory-migrate.js --rollback --apply   # revert if needed
+```
+
+The migrate tool:
+1. Enables native `memorySearch` with hybrid search + temporal decay
+2. Enables `session-memory` hook (saves session on /new and /reset)
+3. Updates cron to 1h if still at 6h
+4. Preserves ALL existing data — your memory files, index, daily logs untouched
+5. FTS5 search remains as fallback if native isn't configured
+
+**No breaking changes**: all v3/v4 commands still work. `memory-search.js` auto-detects native mode and adapts. `memory-boot.js` skips FTS5 indexing when native is active (saves time).
+
 ## Three-Layer Anti-Amnesia Architecture
 
 ```
 Layer 1: SYSTEM (runs without AI)     Layer 2: PLATFORM (OpenClaw built-in)
 ┌─────────────────────────┐           ┌──────────────────────────┐
-│ cron job (every 6h)     │           │ memory-flush             │
+│ cron job (every 1h)     │           │ memory-flush             │
 │ • rebuild search index  │           │ • auto-triggers before   │
 │ • health check          │           │   context compaction     │
 │ • auto-create daily log │           │ • forces AI to write     │
 │   if missing            │           │   memory/YYYY-MM-DD.md   │
-│                         │           │ • user-invisible         │
-│ ⚙️ Pure shell script,   │           │                          │
-│   no AI involvement     │           │ ⚙️ Built into OpenClaw,  │
-└─────────────────────────┘           │   just needs config      │
-                                      └──────────────────────────┘
+│ • active session extract│           │ • user-invisible         │
+│ • ensure watcher alive  │           │                          │
+│                         │           │ ⚙️ Built into OpenClaw,  │
+│ 🔴 watcher daemon       │           │   just needs config      │
+│ • polls every 30s       │           └──────────────────────────┘
+│ • detects session reset │
+│ • extracts memory <30s  │
+│ • auto-started by cron  │
+│                         │
+│ ⚙️ Pure shell/node,     │
+│   no AI involvement     │
+└─────────────────────────┘
 Layer 3: AGENT (AI calls these)
 ┌──────────────────────────────────────────────────┐
 │ memory-write.js    → append daily log / MEMORY.md│
-│ memory-search.js   → BM25 search (0 token cost) │
+│ memory-search.js   → FTS5 search (native fallback)│
 │ memory-index.js    → build/update FTS5 index     │
 │ memory-maintain.js → stats / rebuild / prune     │
+│ memory-migrate.js  → upgrade/rollback helper  NEW│
 │                                                  │
 │ 📋 Governed by AGENTS.md rules:                  │
 │   Session start → health check + read MEMORY.md  │
@@ -54,15 +94,26 @@ All three failing simultaneously = near zero probability.
 
 ## Setup (2 minutes)
 
-### Step 1: Install dependency
+### Quick Setup (v5.0 — recommended for OpenClaw ≥ 2026.4)
 ```bash
-npm install -g better-sqlite3
-```
+# 1. Install cron (watcher + maintenance)
+(crontab -l 2>/dev/null; echo "0 * * * * $(pwd)/scripts/memory-cron.sh") | crontab -
 
-### Step 2: Install cron job
+# 2. Auto-configure native search + hooks
+node scripts/memory-migrate.js --apply
+
+# 3. Restart gateway
+openclaw gateway restart
+```
+That's it! Native memorySearch handles search, we handle everything else.
+
+### Classic Setup (FTS5 mode — for OpenClaw < 2026.4 or no embedding API)
 ```bash
-# Auto-rebuilds index + creates daily logs every 6 hours
-(crontab -l 2>/dev/null; echo "0 */6 * * * $(pwd)/scripts/memory-cron.sh") | crontab -
+# 1. Install FTS5 dependency
+npm install -g better-sqlite3
+
+# 2. Install cron job
+(crontab -l 2>/dev/null; echo "0 * * * * $(pwd)/scripts/memory-cron.sh") | crontab -
 ```
 
 ### Step 3: Enable memory-flush (add to openclaw.json)
@@ -110,12 +161,22 @@ npm install -g better-sqlite3
 
 ## Commands
 
+### Migrate (upgrade/rollback) — NEW in v5.0
+```bash
+node scripts/memory-migrate.js              # preview: what would change
+node scripts/memory-migrate.js --apply      # apply changes (backs up config)
+node scripts/memory-migrate.js --rollback --apply   # revert to FTS5-only mode
+node scripts/memory-migrate.js --status     # show current mode (JSON)
+```
+Enables native memorySearch, session-memory hook, optimal cron frequency.
+Config backup created automatically before changes. Zero data loss guaranteed.
+
 ### Boot (session startup)
 ```bash
 node scripts/memory-boot.js                     # health + index + MEMORY.md output
 ```
 Replaces 3 separate calls (`--status` + `memory-index.js` + `read MEMORY.md`) with one command.
-Auto-recovers from corrupted database.
+Auto-recovers from corrupted database. v5.0: auto-detects native mode, skips FTS5 when native active.
 
 ### Write (most important!)
 ```bash
@@ -142,7 +203,7 @@ Health output:
 }
 ```
 
-### Resume (zero-latency session recovery) — NEW in v3.0
+### Resume (zero-latency session recovery) — Enhanced in v4.0
 ```bash
 node scripts/memory-resume.js                    # generate recovery summary (<2000 tokens)
 node scripts/memory-resume.js --max-chars 1000   # shorter for tight budgets
@@ -151,6 +212,8 @@ Use in AGENTS.md as the first session startup step. Outputs:
 - Last session's final topic & status
 - Recent 3 days' key entries (priority-sorted by tag)
 - Active MEMORY.md sections summary
+- **NEW v4.0**: Auto-detects unextracted reset sessions and extracts them before resuming
+  (eliminates the "resume misses recent work" gap)
 
 ### Search (0 tokens, ~300 token results)
 ```bash
@@ -189,16 +252,29 @@ node scripts/memory-maintain.js --gc --apply     # remove them
 ```
 GC detects: old version references (>14d), completed TODOs, entries >60d old, duplicates.
 
-### Auto-Extract (session transcript mining) — NEW in v3.0
+### Auto-Extract (session transcript mining) — Enhanced in v4.0
 ```bash
-node scripts/memory-auto-extract.js                # extract from active session
+node scripts/memory-auto-extract.js                # extract from active session (full scan)
 node scripts/memory-auto-extract.js <path.jsonl>   # extract from specific file
 node scripts/memory-auto-extract.js --scan          # scan all unprocessed reset sessions
+node scripts/memory-auto-extract.js --active        # incremental extract from active sessions (NEW v4.0)
 node scripts/memory-auto-extract.js --dry-run       # preview without writing
 ```
-Extracts: git commits, file writes, deployments, PM2 restarts, user instructions.
-Automatically deduplicates against existing log entries.
-Integrated into cron: auto-scans reset sessions every 6h.
+Extracts: git commits, file writes, deployments, PM2 restarts, user instructions,
+test results, API responses, config changes, version releases, bug fixes (NEW v4.0).
+`--active` mode reads only new bytes since last extraction (offset-based), safe for frequent runs.
+Integrated into cron: auto-scans reset sessions + active sessions every 1h.
+
+### Watcher (real-time session reset detection) — NEW in v4.0
+```bash
+bash scripts/memory-watcher.sh          # start daemon (polls every 30s)
+bash scripts/memory-watcher.sh --once   # single check, no loop
+```
+- Detects new `.reset.` files within 30 seconds
+- Immediately extracts memory + rebuilds index
+- Auto-started by cron (ensures watcher is always running)
+- PID managed via `.memory/watcher.pid`
+- Solves the #1 failure mode: session reset → instant amnesia
 
 ### Compact (compress old logs)
 ```bash
@@ -262,6 +338,13 @@ bash memory-restore.sh https://<token>@github.com/<user>/openclaw-workspace.git
 
 ## Requirements
 
+### v5.0 Native mode (recommended)
+- Node.js 18+
+- OpenClaw ≥ 2026.4 (for native memorySearch + session-memory hook)
+- `better-sqlite3` **optional** (only needed for FTS5 fallback)
+- No API keys required (OpenClaw auto-detects embedding providers)
+
+### Classic FTS5 mode
 - Node.js 18+
 - `better-sqlite3` (for search/index)
 - Write + health check: zero dependencies
