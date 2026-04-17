@@ -48,7 +48,44 @@ if [ -f "$SCRIPT_DIR/memory-auto-extract.js" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] auto-extract(active): $ACTIVE_EXTRACT" >> "$LOG"
 fi
 
-# 5. Auto-compact files older than 60 days (monthly, on the 1st)
+# 5a. MEMORY.md integrity check — detect accidental wipe + auto-restore from snapshot/git
+MEMORY_FILE="$WORKSPACE/MEMORY.md"
+SNAPSHOT_DIR="$WORKSPACE/memory/snapshots"
+if [ -f "$MEMORY_FILE" ]; then
+    CORE_SIZE=$(wc -c < "$MEMORY_FILE" 2>/dev/null || echo 0)
+    # If MEMORY.md is suspiciously small (<100 chars) but snapshots exist, it was likely wiped
+    if [ "$CORE_SIZE" -lt 100 ] && [ -d "$SNAPSHOT_DIR" ]; then
+        LATEST_SNAP=$(ls -t "$SNAPSHOT_DIR"/MEMORY-*.md 2>/dev/null | head -1)
+        if [ -n "$LATEST_SNAP" ]; then
+            SNAP_SIZE=$(wc -c < "$LATEST_SNAP" 2>/dev/null || echo 0)
+            if [ "$SNAP_SIZE" -gt "$CORE_SIZE" ]; then
+                cp "$LATEST_SNAP" "$MEMORY_FILE"
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️ MEMORY.md was ${CORE_SIZE}B, restored from snapshot (${SNAP_SIZE}B): $LATEST_SNAP" >> "$LOG"
+                node "$SCRIPT_DIR/memory-write.js" --workspace "$WORKSPACE" --today "[auto-restore] MEMORY.md restored from snapshot — was wiped to ${CORE_SIZE}B" --tag warning
+            fi
+        fi
+    fi
+    # Also take periodic snapshot (every 6h = when minute < 2 and hour divisible by 6)
+    HOUR=$(date '+%H')
+    if [ "$((HOUR % 6))" = "0" ]; then
+        node "$SCRIPT_DIR/memory-write.js" --workspace "$WORKSPACE" --snapshot 2>&1 | while read line; do echo "[$(date '+%Y-%m-%d %H:%M:%S')] snapshot: $line" >> "$LOG"; done
+    fi
+elif [ -d "$SNAPSHOT_DIR" ]; then
+    # MEMORY.md completely missing, restore from latest snapshot
+    LATEST_SNAP=$(ls -t "$SNAPSHOT_DIR"/MEMORY-*.md 2>/dev/null | head -1)
+    if [ -n "$LATEST_SNAP" ]; then
+        cp "$LATEST_SNAP" "$MEMORY_FILE"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️ MEMORY.md was MISSING, restored from snapshot: $LATEST_SNAP" >> "$LOG"
+    fi
+fi
+
+# 5b. Gap alerting — if >2 consecutive days with no log, write warning
+GAP_COUNT=$(echo "$HEALTH" | grep -o '"gapCount": *[0-9]*' | grep -o '[0-9]*$')
+if [ -n "$GAP_COUNT" ] && [ "$GAP_COUNT" -gt 2 ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ⚠️ Memory gap alert: $GAP_COUNT days missing in last 14 days" >> "$LOG"
+fi
+
+# 5c. Auto-compact files older than 60 days (monthly, on the 1st)
 if [ "$(date '+%d')" = "01" ]; then
     COMPACT=$(node "$SCRIPT_DIR/memory-compact.js" --workspace "$WORKSPACE" --older-than 60 2>&1)
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] compact: $COMPACT" >> "$LOG"

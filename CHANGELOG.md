@@ -1,94 +1,66 @@
 # Changelog
 
-## v5.0.0 — Memory Guardian (2026-04-12)
+## v6.0.0 (2026-04-17)
+- **NEW**: MEMORY.md capacity management — 5000 char soft cap with usage% tracking, warns at 80%, blocks writes at 100%
+- **NEW**: USER.md auto-update — `--user "preference"` writes to USER.md with 1500 char cap
+- **NEW**: Auto-snapshot before compaction/GC — stored in `memory/snapshots/`, keeps last 10
+- **NEW**: MEMORY.md integrity monitoring — cron detects accidental wipe (<100 bytes) and auto-restores from latest snapshot
+- **NEW**: Periodic snapshots every 6h via cron
+- **NEW**: `--consolidate` command — analyze and deduplicate MEMORY.md entries with snapshot safety
+- **NEW**: `--snapshot` command — manual MEMORY.md snapshot
+- **NEW**: Boot shows capacity% (`📊 MEMORY XX%`)
+- **NEW**: Health check includes capacity info for both MEMORY.md and USER.md + snapshot count
+- **NEW**: Gap alerting in cron (>2 consecutive days missing)
+- **IMPROVE**: GC now snapshots before applying destructive changes
+- **IMPROVE**: Health score includes capacity-based warnings at 80%/90% thresholds
+- **INSPIRED BY**: Hermes Agent bounded memory design + OpenClaw Dreaming separation
 
-**Architecture shift**: Memory Engine evolves from "full-stack memory system" to "memory guardian" — handling everything OpenClaw native memory doesn't do.
+## v5.0.0 (2026-04-12)
+- **MAJOR**: Memory Guardian architecture — redefines role as complement to OpenClaw native memorySearch
+- **NEW**: `memory-migrate.js` — lossless upgrade/rollback between FTS5 and native modes
+- **NEW**: Auto-detect native memorySearch and adapt behavior (boot skips FTS5 when native active)
+- **NEW**: `memory-watcher.sh` — real-time session reset detection (<30s), auto-started by cron
+- **NEW**: `memory-auto-extract.js --active` — incremental extraction from live sessions (offset-based)
+- **NEW**: `memory-resume.js` — zero-latency session recovery context
+- **NEW**: `memory-maintain.js --gc` — detect and remove stale MEMORY.md entries (old versions, completed TODOs, duplicates)
+- **IMPROVE**: Cron upgraded to 1h interval with watcher supervision
+- **IMPROVE**: Session size warning (>4MB yellow, >8MB red)
+- **IMPROVE**: memory-flush prompt hardened (no MEMORY.md writes, no exec during flush)
 
-### 🆕 New
-- **`memory-migrate.js`** — One-command upgrade/rollback tool
-  - Auto-detects OpenClaw capabilities (native memorySearch, session-memory hook, QMD)
-  - Configures optimal memory setup with zero data loss
-  - Automatic config backup before any changes
-  - `--rollback --apply` to revert to FTS5-only mode
-  - `--status` for JSON capability report
+## v4.0.0 (2026-04-12)
+- **NEW**: `memory-watcher.sh` — polls every 30s for session resets, extracts immediately
+- **NEW**: `memory-auto-extract.js --active` — incremental extraction from active sessions
+- **NEW**: `memory-resume.js` — auto-detects unextracted reset sessions
+- **IMPROVE**: Cron ensures watcher is always running
+- **IMPROVE**: Extended extraction patterns: git commits, file writes, deployments, bug fixes
 
-### ✨ Enhanced
-- **`memory-boot.js`** — Auto-detects native memorySearch mode
-  - Skips FTS5 indexing when native is active (faster startup)
-  - Shows search mode in boot output: `🔍 Native search` or `🔍 FTS5`
-- **`memory-search.js`** — Dual-mode search header
-  - FTS5 remains as full-featured fallback
-  - All existing flags (`--last`, `--tag`, `--today`, `--date`, etc.) unchanged
-- **SKILL.md** — Complete rewrite for v5.0 architecture
-  - New comparison table: native vs memory-engine capabilities
-  - Dual setup guide (Quick Setup for native + Classic Setup for FTS5)
-  - Upgrade instructions with zero-data-loss guarantee
+## v3.0.0 (2026-04-10)
+- **NEW**: `--last N` mode — retrieve recent entries without search query
+- **NEW**: `--tag` filter for last-N queries
+- **NEW**: `--today` flag for today-only queries
+- **NEW**: `memory-maintain.js --gc` — MEMORY.md garbage collection
+- **IMPROVE**: Published to ClawHub and GitHub
 
-### 🔄 Migration
-The migrate tool enables:
-1. Native `memorySearch` with hybrid search + temporal decay
-2. `session-memory` hook (auto-save on /new and /reset)
-3. `forceFlushTranscriptBytes` for large sessions
-4. Cron frequency update (6h → 1h) if needed
+## v2.9.0 (2026-04-09)
+- **OPTIMIZE**: Boot smart truncation — 1500 chars default, prevents token explosion
+- **OPTIMIZE**: Search keyword-context extraction for better snippets
 
-### ⚠️ Zero Breaking Changes
-- All v3/v4 commands work identically
-- FTS5 search available as fallback when native isn't configured
-- `better-sqlite3` now optional (only for FTS5 mode)
-- Existing memory files, indices, daily logs all preserved
+## v2.8.0 (2026-04-09)
+- **NEW**: `memory-backup.sh` — auto-backup to GitHub (every 6h via cron)
+- **NEW**: `memory-restore.sh` — one-command disaster recovery
 
----
+## v2.7.0 (2026-04-09)
+- **FIX**: Unified timezone resolution — reads from openclaw.json, matches memory-flush dates
+- **NEW**: `_timezone.js` shared module
 
-## v4.0.0 — Session Reset Watcher (2026-04-12)
+## v2.6.0 (2026-04-09)
+- **FIX**: Corrupted database auto-recovery
+- **FIX**: Date-only queries now return correct results
 
-Based on real-world failure analysis: 15 session resets, 0 memory-flush triggers.
+## v2.5.0 (2026-04-09)
+- **NEW**: `memory-boot.js` — single-command session startup
+- **FIX**: memory-flush prompt restrictions
 
-### 🆕 New
-- **`memory-watcher.sh`** (P0) — Daemon that polls every 30s for session resets
-  - Detects new `.reset.` files and immediately extracts memory
-  - Auto-started and maintained by cron via PID file
-  - Eliminates the reset→amnesia window: from 6h to <30s
-- **`--active` mode** for `memory-auto-extract.js` (P1)
-  - Incremental extraction from active sessions (offset-based)
-  - Reads only new bytes since last extraction, safe for frequent runs
-
-### ✨ Enhanced
-- **Cron frequency** 6h → 1h (P1)
-- **`memory-resume.js`** — Auto-detects and extracts unprocessed reset sessions before resuming (P1)
-- **`memory-auto-extract.js`** — 11 new extraction patterns (P2):
-  - Test results, API responses, config changes, version releases
-  - Bug fixes, assistant summaries, feature completions
-- **`memory-cron.sh`** — Ensures watcher daemon is always running
-
----
-
-## v3.0.0 — Session Recovery & Smart Tools (2026-04-10)
-
-All 6 user feedback items implemented.
-
-### 🆕 New
-- **`memory-resume.js`** — Zero-latency session recovery (<2000 tokens)
-- **`memory-auto-extract.js`** — Auto-extract from session transcripts
-- **`--last N`** for `memory-search.js` — Time-ordered recent entries
-- **`--gc`** for `memory-maintain.js` — MEMORY.md auto-cleanup
-
-### ✨ Enhanced
-- Write deduplication (skip near-identical entries)
-- Memory-flush prompt fix (no MEMORY.md writes during flush)
-- `memory-boot.js` — Single-command startup (replaces 3 calls)
-- Session size warning in cron
-- `postIndexSync: async` support
-
----
-
-## v2.0.0 — Three-Layer Anti-Amnesia (2026-04-09)
-
-Initial public release.
-
-- Three-layer architecture: System (cron) + Platform (memory-flush) + Agent (scripts)
-- SQLite FTS5 with BM25 + CJK bigram search
-- Temporal decay ranking (90-day half-life)
-- 6 scripts: write, search, index, maintain, backup, restore
-- Unified timezone handling
-- GitHub disaster recovery (auto-backup + one-click restore)
-- Token-optimized: search 0 tokens, results ~300 tokens
+## v2.0.0 (2026-04-09)
+- **Initial release**: Three-layer anti-amnesia architecture
+- SQLite FTS5 + BM25 + CJK bigram search + temporal decay

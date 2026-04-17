@@ -162,6 +162,11 @@ const core = readCore(maxChars);
 const session = checkSessionSize();
 
 // Compact output
+// Capacity check
+const CORE_SOFT_CAP = 5000;
+const coreChars = fs.existsSync(MEMORY_MD) ? fs.statSync(MEMORY_MD).size : 0;
+const coreUsage = Math.round((coreChars / CORE_SOFT_CAP) * 100);
+
 const warnings = [];
 if (!health.hasCore) warnings.push('⚠️ MEMORY.md missing');
 if (!health.hasTodayLog) warnings.push(`⚠️ No log for ${health.today}`);
@@ -169,9 +174,12 @@ if (health.gaps > 3) warnings.push(`⚠️ ${health.gaps} gaps in 14 days`);
 if (index.cleaned > 0) warnings.push(`🧹 Cleaned ${index.cleaned} orphan(s)`);
 if (session && session.sizeMB > 8) warnings.push(`🔴 Session ${session.sizeMB}MB — approaching reset!`);
 else if (session && session.sizeMB > 4) warnings.push(`🟡 Session ${session.sizeMB}MB — consider summarizing`);
+if (coreUsage >= 90) warnings.push(`🔴 MEMORY.md ${coreUsage}% full — consolidate now!`);
+else if (coreUsage >= 80) warnings.push(`🟡 MEMORY.md ${coreUsage}% full`);
 
 const modeTag = nativeSearchAvailable ? ' | 🔍 Native search' : ' | 🔍 FTS5';
-console.log(`[boot] Health: ${health.score}/100 | Files: ${health.dailyFiles} | Index: ${index.totalChunks || '?'} chunks${session ? ` | Session: ${session.sizeMB}MB` : ''}${index.indexed > 0 ? ` (${index.indexed} updated)` : ''}${modeTag}${warnings.length ? ' | ' + warnings.join(' | ') : ''}`);
+const capTag = ` | 📊 MEMORY ${coreUsage}%`;
+console.log(`[boot] Health: ${health.score}/100 | Files: ${health.dailyFiles} | Index: ${index.totalChunks || '?'} chunks${session ? ` | Session: ${session.sizeMB}MB` : ''}${index.indexed > 0 ? ` (${index.indexed} updated)` : ''}${modeTag}${capTag}${warnings.length ? ' | ' + warnings.join(' | ') : ''}`);
 if (core) {
   console.log('---');
   console.log(core);

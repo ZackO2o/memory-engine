@@ -1,6 +1,6 @@
 ---
 name: memory-engine
-description: "Memory guardian for OpenClaw — three-layer anti-amnesia with real-time session reset watcher. v5.0: works alongside OpenClaw native memorySearch (vector+hybrid) when available, falls back to built-in FTS5 when not. Focuses on what native lacks: auto-write, session extraction, watcher daemon, GC, health checks, backup. Layer 1 (system): cron every 1h + watcher detects resets <30s + active-session incremental extraction. Layer 2 (platform): memory-flush + session-memory hook. Layer 3 (agent): write/search/maintain/boot scripts. Seamless upgrade: run memory-migrate.js to enable native features, zero data loss. Use when: recalling past conversations, writing memory entries, checking memory health, maintaining search index. Triggers: 'remember', 'recall', 'what did we discuss', 'memory status', 'search memory', 'reindex'."
+description: "Memory guardian for OpenClaw — three-layer anti-amnesia with capacity management. v6.0: MEMORY.md soft cap (5000 chars) + USER.md cap (1500 chars) prevent prompt explosion. Auto-snapshot before compaction/GC. Integrity monitoring restores from snapshot if MEMORY.md is wiped. Works alongside OpenClaw native memorySearch (vector+hybrid) when available, falls back to built-in FTS5 when not. Focuses on what native lacks: auto-write, session extraction, watcher daemon, GC, health checks, backup, capacity management. Layer 1 (system): cron every 1h + watcher detects resets <30s + integrity checks. Layer 2 (platform): memory-flush + session-memory hook. Layer 3 (agent): write/search/maintain/boot scripts. Use when: recalling past conversations, writing memory entries, checking memory health, maintaining search index. Triggers: 'remember', 'recall', 'what did we discuss', 'memory status', 'search memory', 'reindex'."
 ---
 
 # Memory Engine 🧠⚡
@@ -184,11 +184,17 @@ Auto-recovers from corrupted database. v5.0: auto-detects native mode, skips FTS
 node scripts/memory-write.js --today "Deployed v2.0 to production"
 node scripts/memory-write.js --today "User prefers dark mode" --tag preference
 
-# Long-term memory (appends to MEMORY.md, never decays)
+# Long-term memory (appends to MEMORY.md, capacity-managed — 5000 char soft cap)
 node scripts/memory-write.js --core "Stack: Next.js + PostgreSQL + Redis"
 node scripts/memory-write.js --core "Deploy via Docker Compose" --section infrastructure
 
-# Health check
+# User profile (appends to USER.md — 1500 char soft cap)
+node scripts/memory-write.js --user "Prefers concise answers, dislikes verbose explanations"
+
+# Snapshot MEMORY.md (before risky operations)
+node scripts/memory-write.js --snapshot
+
+# Health check (now includes capacity % for MEMORY.md and USER.md)
 node scripts/memory-write.js --status
 ```
 
@@ -197,6 +203,9 @@ Health output:
 {
   "hasTodayLog": true,
   "hasCoreMemory": true,
+  "coreMemory": { "chars": 2651, "cap": 5000, "usage": "53%" },
+  "userProfile": { "chars": 380, "cap": 1500, "usage": "25%" },
+  "snapshots": 3,
   "gapCount": 2,
   "healthScore": 71,
   "warnings": ["2 gaps in last 14 days"]
@@ -251,6 +260,15 @@ node scripts/memory-maintain.js --gc             # preview stale entries
 node scripts/memory-maintain.js --gc --apply     # remove them
 ```
 GC detects: old version references (>14d), completed TODOs, entries >60d old, duplicates.
+
+### Consolidate (capacity management) — NEW in v6.0
+```bash
+node scripts/memory-maintain.js --consolidate          # analyze merge candidates
+node scripts/memory-maintain.js --consolidate --apply  # remove duplicates (snapshots first)
+```
+When MEMORY.md exceeds 70% of the 5000-char soft cap, use this to find and merge duplicate entries.
+Auto-snapshots MEMORY.md before any destructive operation.
+For deeper consolidation (merging semantically similar entries), manually edit MEMORY.md.
 
 ### Auto-Extract (session transcript mining) — Enhanced in v4.0
 ```bash
